@@ -173,14 +173,14 @@ class BattleshipGame:
         if self.ai_ships[row][col] == "S":
             self.ai_grid[row][col] = "X"  # Hit
             self.player_hits += 1
-            result = f"Hit at ({row}, {col})!"
+            result = f"Hit at {format_coordinate(row, col)}!"
             
             if self.player_hits >= self.total_ship_cells:
                 self.game_phase = "ended"
                 return "🎉 You Win! All AI ships destroyed!"
         else:
             self.ai_grid[row][col] = "O"  # Miss
-            result = f"Miss at ({row}, {col})"
+            result = f"Miss at {format_coordinate(row, col)}"
         
         # AI turn
         self.turn = "ai"
@@ -219,14 +219,14 @@ class BattleshipGame:
                     (nr, nc) not in self.ai_target_queue):
                     self.ai_target_queue.append((nr, nc))
             
-            result = f"AI Hit your ship at ({row}, {col})!"
+            result = f"AI Hit your ship at {format_coordinate(row, col)}!"
             
             if self.ai_hits >= self.total_ship_cells:
                 self.game_phase = "ended"
                 return "💀 AI Wins! All your ships destroyed!"
         else:
             self.player_grid[row][col] = "O"  # Miss
-            result = f"AI Missed at ({row}, {col})"
+            result = f"AI Missed at {format_coordinate(row, col)}"
             
             # If we missed in target mode, might need to adjust
             if not self.ai_target_queue:
@@ -236,6 +236,10 @@ class BattleshipGame:
 
 # Global game instance
 game = BattleshipGame()
+
+def format_coordinate(row, col):
+    """Convert (row, col) to standard Battleship notation (e.g., 'B4')"""
+    return f"{chr(ord('A') + col)}{row + 1}"
 
 def cell_symbol(cell, show_ships):
     """Symbol shown on a board button for a grid cell"""
@@ -325,9 +329,17 @@ with gr.Blocks(title="Battleship Game") as app:
         with gr.Column():
             gr.Markdown("### Your Grid")
             with gr.Group():
+                # Column headers (A-J)
+                with gr.Row():
+                    gr.Markdown("", scale=1, min_width=40)  # Empty space for row label column
+                    for c in range(GRID_SIZE):
+                        gr.Markdown(f"**{chr(ord('A') + c)}**", scale=1, min_width=40)
+                
+                # Grid rows with row labels (1-10)
                 player_buttons = []
                 for r in range(GRID_SIZE):
                     with gr.Row():
+                        gr.Markdown(f"**{r + 1}**", scale=1, min_width=40)  # Row label
                         row_btns = []
                         for c in range(GRID_SIZE):
                             btn = gr.Button(cell_symbol(game.player_grid[r][c], show_ships=True),
@@ -338,9 +350,17 @@ with gr.Blocks(title="Battleship Game") as app:
         with gr.Column():
             gr.Markdown("### AI Grid (Click to attack)")
             with gr.Group():
+                # Column headers (A-J)
+                with gr.Row():
+                    gr.Markdown("", scale=1, min_width=40)  # Empty space for row label column
+                    for c in range(GRID_SIZE):
+                        gr.Markdown(f"**{chr(ord('A') + c)}**", scale=1, min_width=40)
+                
+                # Grid rows with row labels (1-10)
                 ai_buttons = []
                 for r in range(GRID_SIZE):
                     with gr.Row():
+                        gr.Markdown(f"**{r + 1}**", scale=1, min_width=40)  # Row label
                         row_btns = []
                         for c in range(GRID_SIZE):
                             btn = gr.Button(cell_symbol(game.ai_grid[r][c], show_ships=False),

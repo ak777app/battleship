@@ -160,11 +160,16 @@ Each bug is documented with: Title, Reported by, Status (Open / In progress / Fi
 ## Bug 13 — Grid axis labels don't follow standard Battleship convention
 
 - **Reported by:** self / analysis
-- **Status:** Open
+- **Status:** Fixed
 - **Description:** In `create_grid_display`, the column header loop (lines ~208-211) prints `0`-`9` and the row header (lines ~213-214) prints `0`-`9`. Standard Battleship uses letters `A`-`J` for columns and numbers `1`-`10` for rows.
 - **Impact:** Coordinates shown to the player don't match the conventional notation ("B4"), making the board harder to read and status messages harder to relate to the grid.
-- **Fix (proposed):** (The HTML board was removed by the bug #1/#2 merge, so this now means adding label widgets around the button grid.) Render column headers as letters (`chr(ord('A') + i)`) and row headers as `1`-`10` (`r + 1`), keeping internal `grid[r][c]` indexing 0-based. Once bugs #1/#2 merge the HTML board into the button board, re-create these labels as separate label widgets around the button grid.
-- **Devin session:** _(to fill in when the fix starts)_
+- **Fix:** Added standard Battleship grid labels to both grids:
+  - Column headers now display A-J using `gr.Markdown` widgets above each grid
+  - Row labels now display 1-10 using `gr.Markdown` widgets at the start of each row
+  - Added `format_coordinate(row, col)` helper function to convert internal 0-based indexing to standard notation (e.g., "B4")
+  - Updated all coordinate messages (hit/miss) in `player_attack` and `_ai_attack` to use standard notation
+  - Internal `grid[r][c]` indexing remains 0-based for code clarity
+- **Devin session:** Databricks Assistant (Genie Code)
 - **PR:** _(to fill in when opened)_
 
 ---
