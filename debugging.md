@@ -9,24 +9,24 @@ Each bug is documented with: Title, Reported by, Status (Open / In progress / Fi
 ## Bug 1 — Shared click handler across both grids (routing bug)
 
 - **Reported by:** self / analysis
-- **Status:** Open
+- **Status:** Fixed
 - **Description:** Every button on both grids is wired to the same `handle_grid_click(r, c)` (app.py lines ~344-358), which dispatches only on `game.game_phase` (lines ~239-244) and never on which grid was clicked. During the "placement" phase, clicking a cell on the AI grid still calls `game.place_ship` and places a player ship; during "playing", clicking the player grid calls `game.player_attack` and fires at the AI.
 - **Impact:** Clicks are routed to the wrong board. Players can place ships by clicking the enemy board and attack the enemy by clicking their own board, which makes the two-grid layout meaningless and confuses the game model.
-- **Fix (proposed):** Differentiate player vs AI grid clicks (e.g. pass an `is_ai_grid` flag into the handler) so that placement only affects the player grid and attacks only affect the AI grid; reject clicks on the wrong grid with an explanatory message.
-- **Devin session:** _(to fill in when the fix starts)_
-- **PR:** _(to fill in when opened)_
+- **Fix:** `handle_grid_click(row, col, is_ai_grid)` now takes an `is_ai_grid` flag, bound per grid when the buttons are wired. Placement ignores AI-grid clicks ("Place your ships on your own grid (left)!") and attacks ignore player-grid clicks ("Fire at the AI grid (right)!").
+- **Devin session:** https://app.devin.ai/sessions/5b3471310b8c4d5288cae5205b7b2c25
+- **PR:** https://github.com/ak777app/battleship/pull/2
 
 ---
 
 ## Bug 2 — Interactive buttons never reflect game state (UI/UX)
 
 - **Reported by:** user
-- **Status:** Open
+- **Status:** Fixed
 - **Description:** The `gr.Button` grids (`player_buttons`, `ai_buttons`) are hard-coded to "🌊" (lines ~316, ~331) and are never included in any handler's `outputs` (lines ~347-358), so they remain water forever. Only the separate `gr.HTML` panels (`player_display`, `ai_display`) show the true board state, and those panels are not clickable.
 - **Impact:** The clickable board and the visible board are two different widgets. The player cannot see which cells they already attacked on the interactive grid, and must cross-reference the static HTML panel, which is a poor and error-prone experience.
-- **Fix (proposed):** Collapse the duplicated layout into a single interactive board: make the buttons both clickable and stateful by returning `gr.update(value=symbol)` for all cells from `handle_grid_click` and `reset_game_handler`, and add the flattened button lists to their `outputs`. Remove the now-redundant `gr.HTML` panels.
-- **Devin session:** _(to fill in when the fix starts)_
-- **PR:** _(to fill in when opened)_
+- **Fix:** The `gr.HTML` panels (and the now-orphaned `create_grid_display`) were removed, leaving one interactive board per side. New `cell_symbol(cell, show_ships)` and `board_updates()` helpers return a `gr.update(value=symbol)` for all 200 cells; `handle_grid_click` and `reset_game_handler` return `[message] + board_updates()` and both are wired to `board_outputs = [message_box] + flat_buttons`, so the buttons now always show live state (including reset — see bug #11).
+- **Devin session:** https://app.devin.ai/sessions/5b3471310b8c4d5288cae5205b7b2c25
+- **PR:** https://github.com/ak777app/battleship/pull/2
 
 ---
 
@@ -131,12 +131,12 @@ Each bug is documented with: Title, Reported by, Status (Open / In progress / Fi
 ## Bug 11 — Reset (and toggle) do not refresh the interactive buttons
 
 - **Reported by:** self / analysis
-- **Status:** Open
+- **Status:** Fixed
 - **Description:** `reset_game_handler` (lines ~265-270) and its wiring (lines ~365-368) output only to the HTML panels and the message box, never to the button grids. This is a facet of bug #2.
 - **Impact:** After a reset the interactive board keeps whatever labels it had, so the clickable board disagrees with the actual (fresh) game state.
-- **Fix (proposed):** Once the board is merged into a single interactive grid (bug #2), include the flattened buttons in the `outputs` of `reset_game_handler` and any other handler that changes board state.
-- **Devin session:** _(to fill in when the fix starts)_
-- **PR:** _(to fill in when opened)_
+- **Fix:** Resolved together with bug #2 — `reset_game_handler` now returns `[game.message] + board_updates()` and is wired to `board_outputs`, so every button is repainted on reset. The orientation toggle still writes to the message box only, which is correct since it changes no board state (see bug #9 for the preview work).
+- **Devin session:** https://app.devin.ai/sessions/5b3471310b8c4d5288cae5205b7b2c25
+- **PR:** https://github.com/ak777app/battleship/pull/2
 
 ---
 
@@ -144,7 +144,7 @@ Each bug is documented with: Title, Reported by, Status (Open / In progress / Fi
 
 - **Reported by:** self / analysis
 - **Status:** Open
-- **Description:** `handle_cell_click` is an empty stub (lines ~253-258), `create_interactive_grid` is defined but never called (lines ~272-290), and the `clickable` parameter of `create_grid_display` (line ~202) is never used.
+- **Description:** `handle_cell_click` is an empty stub (lines ~253-258), `create_interactive_grid` is defined but never called (lines ~272-290), and the `clickable` parameter of `create_grid_display` (line ~202) is never used. (`create_grid_display` and its unused `clickable` parameter were already deleted by the bug #1/#2 board merge; `handle_cell_click` and `create_interactive_grid` remain.)
 - **Impact:** Dead code misleads readers about how input is handled and adds maintenance noise.
 - **Fix (proposed):** Remove the stub, the unused factory, and the unused parameter during the board-merge refactor (bugs #1/#2).
 - **Devin session:** _(to fill in when the fix starts)_
@@ -158,7 +158,7 @@ Each bug is documented with: Title, Reported by, Status (Open / In progress / Fi
 - **Status:** Open
 - **Description:** In `create_grid_display`, the column header loop (lines ~208-211) prints `0`-`9` and the row header (lines ~213-214) prints `0`-`9`. Standard Battleship uses letters `A`-`J` for columns and numbers `1`-`10` for rows.
 - **Impact:** Coordinates shown to the player don't match the conventional notation ("B4"), making the board harder to read and status messages harder to relate to the grid.
-- **Fix (proposed):** Render column headers as letters (`chr(ord('A') + i)`) and row headers as `1`-`10` (`r + 1`), keeping internal `grid[r][c]` indexing 0-based. Once bugs #1/#2 merge the HTML board into the button board, re-create these labels as separate label widgets around the button grid.
+- **Fix (proposed):** (The HTML board was removed by the bug #1/#2 merge, so this now means adding label widgets around the button grid.) Render column headers as letters (`chr(ord('A') + i)`) and row headers as `1`-`10` (`r + 1`), keeping internal `grid[r][c]` indexing 0-based. Once bugs #1/#2 merge the HTML board into the button board, re-create these labels as separate label widgets around the button grid.
 - **Devin session:** _(to fill in when the fix starts)_
 - **PR:** _(to fill in when opened)_
 
