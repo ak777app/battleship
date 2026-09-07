@@ -33,11 +33,16 @@ Each bug is documented with: Title, Reported by, Status (Open / In progress / Fi
 ## Bug 3 — AI ship placement can silently fail, producing an unwinnable game
 
 - **Reported by:** self / analysis
-- **Status:** Open
+- **Status:** Fixed
 - **Description:** `_place_ai_ships` gives up after 100 attempts with `placed` still False (lines ~44-65) and moves on to the next ship without reporting anything. Meanwhile the win condition uses the hardcoded `total_ship_cells = sum(SHIPS.values())` (line ~27, checked at line ~140).
 - **Impact:** The AI board may contain fewer than 17 ship cells, so the player can never reach `player_hits >= 17` and the game becomes unwinnable.
-- **Fix (proposed):** Guarantee placement — retry from a fresh grid (or raise/relax the attempt cap and loop until success) so the AI board always contains exactly 17 ship cells.
-- **Devin session:** _(to fill in when the fix starts)_
+- **Fix:** Replaced bounded random retry with a backtracking placement algorithm. `_place_ai_ships` now uses `_backtrack_place_ships` which:
+  - Generates all valid positions for each ship
+  - Shuffles positions for randomness while preserving placement guarantee
+  - Recursively places ships with backtracking if a position doesn't lead to a complete fleet
+  - Only fails with RuntimeError for genuinely unsatisfiable GRID_SIZE/SHIPS configurations
+  - Guarantees exactly 17 ship cells are always placed for standard configurations
+- **Devin session:** Databricks Assistant (Genie Code)
 - **PR:** _(to fill in when opened)_
 
 ---

@@ -42,27 +42,65 @@ class BattleshipGame:
         self.ai_target_queue = []
     
     def _place_ai_ships(self):
-        """Randomly place all AI ships"""
-        for ship_name, ship_size in SHIPS.items():
-            placed = False
-            attempts = 0
-            while not placed and attempts < 100:
-                orientation = random.choice(["horizontal", "vertical"])
-                if orientation == "horizontal":
-                    row = random.randint(0, GRID_SIZE - 1)
-                    col = random.randint(0, GRID_SIZE - ship_size)
-                    if self._can_place_ship(self.ai_ships, row, col, ship_size, orientation):
-                        for i in range(ship_size):
-                            self.ai_ships[row][col + i] = "S"
-                        placed = True
-                else:
-                    row = random.randint(0, GRID_SIZE - ship_size)
-                    col = random.randint(0, GRID_SIZE - 1)
-                    if self._can_place_ship(self.ai_ships, row, col, ship_size, orientation):
-                        for i in range(ship_size):
-                            self.ai_ships[row + i][col] = "S"
-                        placed = True
-                attempts += 1
+        """Place all AI ships using backtracking to guarantee success when a valid layout exists."""
+        self.ai_ships = [["~" for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
+        ship_list = list(SHIPS.items())
+        
+        if not self._backtrack_place_ships(ship_list, 0):
+            # Only fails if GRID_SIZE and SHIPS configuration is unsatisfiable
+            raise RuntimeError(
+                f"Cannot place fleet on {GRID_SIZE}x{GRID_SIZE} board. "
+                f"Configuration unsatisfiable for ships: {SHIPS}"
+            )
+    
+    def _backtrack_place_ships(self, ship_list, index):
+        """Recursively place ships using backtracking. Returns True if successful."""
+        if index >= len(ship_list):
+            # All ships placed successfully
+            return True
+        
+        ship_name, ship_size = ship_list[index]
+        
+        # Generate all valid positions for this ship
+        positions = []
+        for orientation in ["horizontal", "vertical"]:
+            if orientation == "horizontal":
+                for row in range(GRID_SIZE):
+                    for col in range(GRID_SIZE - ship_size + 1):
+                        if self._can_place_ship(self.ai_ships, row, col, ship_size, orientation):
+                            positions.append((row, col, orientation))
+            else:  # vertical
+                for row in range(GRID_SIZE - ship_size + 1):
+                    for col in range(GRID_SIZE):
+                        if self._can_place_ship(self.ai_ships, row, col, ship_size, orientation):
+                            positions.append((row, col, orientation))
+        
+        # Shuffle positions for randomness
+        random.shuffle(positions)
+        
+        # Try each valid position
+        for row, col, orientation in positions:
+            # Place the ship
+            cells = []
+            if orientation == "horizontal":
+                for i in range(ship_size):
+                    self.ai_ships[row][col + i] = "S"
+                    cells.append((row, col + i))
+            else:
+                for i in range(ship_size):
+                    self.ai_ships[row + i][col] = "S"
+                    cells.append((row + i, col))
+            
+            # Recurse to place remaining ships
+            if self._backtrack_place_ships(ship_list, index + 1):
+                return True
+            
+            # Backtrack: remove this ship and try next position
+            for r, c in cells:
+                self.ai_ships[r][c] = "~"
+        
+        # No valid placement found for this ship
+        return False
     
     def _can_place_ship(self, grid, row, col, size, orientation):
         """Check if ship can be placed at given position"""
