@@ -199,56 +199,40 @@ class BattleshipGame:
 # Global game instance
 game = BattleshipGame()
 
-def create_grid_display(grid, clickable=False, show_ships=True):
-    """Create HTML representation of grid"""
-    html = '<div style="display: inline-block; margin: 10px;">'
-    html += '<table style="border-collapse: collapse; margin: 10px;">'
-    
-    # Header row
-    html += '<tr><th></th>'
-    for i in range(GRID_SIZE):
-        html += f'<th style="padding: 5px; text-align: center;">{i}</th>'
-    html += '</tr>'
-    
-    for r in range(GRID_SIZE):
-        html += f'<tr><th style="padding: 5px;">{r}</th>'
-        for c in range(GRID_SIZE):
-            cell = grid[r][c]
-            
-            # Determine cell appearance
-            if cell == "X":  # Hit
-                color = "#ff4444"
-                symbol = "💥"
-            elif cell == "O":  # Miss
-                color = "#4444ff"
-                symbol = "⚪"
-            elif cell == "S" and show_ships:  # Ship
-                color = "#44ff44"
-                symbol = "🚢"
-            else:  # Water
-                color = "#6699cc"
-                symbol = "🌊"
-            
-            html += f'<td style="width: 35px; height: 35px; background-color: {color}; '
-            html += f'border: 1px solid #333; text-align: center; font-size: 18px;">{symbol}</td>'
-        html += '</tr>'
-    
-    html += '</table></div>'
-    return html
+def cell_symbol(cell, show_ships):
+    """Symbol shown on a board button for a grid cell"""
+    if cell == "X":
+        return "💥"
+    if cell == "O":
+        return "⚪"
+    if cell == "S" and show_ships:
+        return "🚢"
+    return "🌊"
 
-def handle_grid_click(row, col, evt: gr.SelectData):
+def board_updates():
+    """Button updates for both boards, flattened player-first then AI"""
+    updates = [gr.update(value=cell_symbol(game.player_grid[r][c], show_ships=True))
+               for r in range(GRID_SIZE) for c in range(GRID_SIZE)]
+    updates += [gr.update(value=cell_symbol(game.ai_grid[r][c], show_ships=False))
+                for r in range(GRID_SIZE) for c in range(GRID_SIZE)]
+    return updates
+
+def handle_grid_click(row, col, is_ai_grid):
     """Handle grid clicks for placement and attacking"""
     if game.game_phase == "placement":
-        msg = game.place_ship(row, col)
+        if is_ai_grid:
+            msg = "Place your ships on your own grid (left)!"
+        else:
+            msg = game.place_ship(row, col)
     elif game.game_phase == "playing":
-        msg = game.player_attack(row, col)
+        if is_ai_grid:
+            msg = game.player_attack(row, col)
+        else:
+            msg = "Fire at the AI grid (right)!"
     else:
         msg = game.message
     
-    player_html = create_grid_display(game.player_grid, show_ships=True)
-    ai_html = create_grid_display(game.ai_grid, show_ships=False)
-    
-    return player_html, ai_html, msg
+    return [msg] + board_updates()
 
 def handle_cell_click(evt: gr.SelectData):
     """Handle click events on the grids"""
@@ -265,9 +249,7 @@ def orientation_toggle():
 def reset_game_handler():
     """Reset the game"""
     game.reset_game()
-    player_html = create_grid_display(game.player_grid, show_ships=True)
-    ai_html = create_grid_display(game.ai_grid, show_ships=False)
-    return player_html, ai_html, game.message
+    return [game.message] + board_updates()
 
 def create_interactive_grid(grid, is_ai_grid=False):
     """Create interactive grid with buttons"""
@@ -304,31 +286,27 @@ with gr.Blocks(title="Battleship Game") as app:
     with gr.Row():
         with gr.Column():
             gr.Markdown("### Your Grid")
-            player_display = gr.HTML(create_grid_display(game.player_grid, show_ships=True))
-            
-            # Player grid buttons
             with gr.Group():
                 player_buttons = []
                 for r in range(GRID_SIZE):
                     with gr.Row():
                         row_btns = []
                         for c in range(GRID_SIZE):
-                            btn = gr.Button("🌊", size="sm", scale=1, min_width=40)
+                            btn = gr.Button(cell_symbol(game.player_grid[r][c], show_ships=True),
+                                            size="sm", scale=1, min_width=40)
                             row_btns.append(btn)
                         player_buttons.append(row_btns)
         
         with gr.Column():
             gr.Markdown("### AI Grid (Click to attack)")
-            ai_display = gr.HTML(create_grid_display(game.ai_grid, show_ships=False))
-            
-            # AI grid buttons
             with gr.Group():
                 ai_buttons = []
                 for r in range(GRID_SIZE):
                     with gr.Row():
                         row_btns = []
                         for c in range(GRID_SIZE):
-                            btn = gr.Button("🌊", size="sm", scale=1, min_width=40)
+                            btn = gr.Button(cell_symbol(game.ai_grid[r][c], show_ships=False),
+                                            size="sm", scale=1, min_width=40)
                             row_btns.append(btn)
                         ai_buttons.append(row_btns)
     
@@ -341,20 +319,24 @@ with gr.Blocks(title="Battleship Game") as app:
     **Legend**: 🌊 Water | 🚢 Ship | 💥 Hit | ⚪ Miss
     """)
     
+    flat_buttons = ([player_buttons[r][c] for r in range(GRID_SIZE) for c in range(GRID_SIZE)] +
+                    [ai_buttons[r][c] for r in range(GRID_SIZE) for c in range(GRID_SIZE)])
+    board_outputs = [message_box] + flat_buttons
+    
     # Wire up player grid clicks (for placement)
     for r in range(GRID_SIZE):
         for c in range(GRID_SIZE):
             player_buttons[r][c].click(
-                fn=lambda r=r, c=c: handle_grid_click(r, c, None),
-                outputs=[player_display, ai_display, message_box]
+                fn=lambda r=r, c=c: handle_grid_click(r, c, is_ai_grid=False),
+                outputs=board_outputs
             )
     
     # Wire up AI grid clicks (for attacking)
     for r in range(GRID_SIZE):
         for c in range(GRID_SIZE):
             ai_buttons[r][c].click(
-                fn=lambda r=r, c=c: handle_grid_click(r, c, None),
-                outputs=[player_display, ai_display, message_box]
+                fn=lambda r=r, c=c: handle_grid_click(r, c, is_ai_grid=True),
+                outputs=board_outputs
             )
     
     toggle_btn.click(
@@ -364,7 +346,7 @@ with gr.Blocks(title="Battleship Game") as app:
     
     reset_btn.click(
         fn=reset_game_handler,
-        outputs=[player_display, ai_display, message_box]
+        outputs=board_outputs
     )
 
 if __name__ == "__main__":
