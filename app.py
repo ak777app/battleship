@@ -42,27 +42,50 @@ class BattleshipGame:
         self.ai_target_queue = []
     
     def _place_ai_ships(self):
-        """Randomly place all AI ships"""
-        for ship_name, ship_size in SHIPS.items():
-            placed = False
-            attempts = 0
-            while not placed and attempts < 100:
-                orientation = random.choice(["horizontal", "vertical"])
-                if orientation == "horizontal":
-                    row = random.randint(0, GRID_SIZE - 1)
-                    col = random.randint(0, GRID_SIZE - ship_size)
-                    if self._can_place_ship(self.ai_ships, row, col, ship_size, orientation):
-                        for i in range(ship_size):
-                            self.ai_ships[row][col + i] = "S"
-                        placed = True
-                else:
-                    row = random.randint(0, GRID_SIZE - ship_size)
-                    col = random.randint(0, GRID_SIZE - 1)
-                    if self._can_place_ship(self.ai_ships, row, col, ship_size, orientation):
-                        for i in range(ship_size):
-                            self.ai_ships[row + i][col] = "S"
-                        placed = True
-                attempts += 1
+        """Randomly place all AI ships, guaranteed to succeed"""
+        max_board_resets = 10
+        board_resets = 0
+        
+        while board_resets < max_board_resets:
+            # Clear the board for a fresh attempt
+            self.ai_ships = [["~" for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
+            all_placed = True
+            
+            for ship_name, ship_size in SHIPS.items():
+                placed = False
+                attempts = 0
+                
+                while not placed and attempts < 100:
+                    orientation = random.choice(["horizontal", "vertical"])
+                    if orientation == "horizontal":
+                        row = random.randint(0, GRID_SIZE - 1)
+                        col = random.randint(0, GRID_SIZE - ship_size)
+                        if self._can_place_ship(self.ai_ships, row, col, ship_size, orientation):
+                            for i in range(ship_size):
+                                self.ai_ships[row][col + i] = "S"
+                            placed = True
+                    else:
+                        row = random.randint(0, GRID_SIZE - ship_size)
+                        col = random.randint(0, GRID_SIZE - 1)
+                        if self._can_place_ship(self.ai_ships, row, col, ship_size, orientation):
+                            for i in range(ship_size):
+                                self.ai_ships[row + i][col] = "S"
+                            placed = True
+                    attempts += 1
+                
+                if not placed:
+                    # Failed to place this ship, retry from a fresh board
+                    all_placed = False
+                    break
+            
+            if all_placed:
+                # Successfully placed all ships
+                return
+            
+            board_resets += 1
+        
+        # If we get here, something is fundamentally wrong (should never happen)
+        raise RuntimeError(f"Failed to place all AI ships after {max_board_resets} board resets. This should never happen.")
     
     def _can_place_ship(self, grid, row, col, size, orientation):
         """Check if ship can be placed at given position"""
