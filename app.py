@@ -331,15 +331,15 @@ with gr.Blocks(title="Battleship Game") as app:
             with gr.Group():
                 # Column headers (A-J)
                 with gr.Row():
-                    gr.Markdown("", scale=1, min_width=40)  # Empty space for row label column
+                    gr.HTML("<div style='width:40px;text-align:center'>&nbsp;</div>")  # Empty space for row label column
                     for c in range(GRID_SIZE):
-                        gr.Markdown(f"**{chr(ord('A') + c)}**", scale=1, min_width=40)
+                        gr.HTML(f"<div style='width:40px;text-align:center'><b>{chr(ord('A') + c)}</b></div>")
                 
                 # Grid rows with row labels (1-10)
                 player_buttons = []
                 for r in range(GRID_SIZE):
                     with gr.Row():
-                        gr.Markdown(f"**{r + 1}**", scale=1, min_width=40)  # Row label
+                        gr.HTML(f"<div style='width:40px;text-align:center'><b>{r + 1}</b></div>")  # Row label
                         row_btns = []
                         for c in range(GRID_SIZE):
                             btn = gr.Button(cell_symbol(game.player_grid[r][c], show_ships=True),
@@ -352,15 +352,15 @@ with gr.Blocks(title="Battleship Game") as app:
             with gr.Group():
                 # Column headers (A-J)
                 with gr.Row():
-                    gr.Markdown("", scale=1, min_width=40)  # Empty space for row label column
+                    gr.HTML("<div style='width:40px;text-align:center'>&nbsp;</div>")  # Empty space for row label column
                     for c in range(GRID_SIZE):
-                        gr.Markdown(f"**{chr(ord('A') + c)}**", scale=1, min_width=40)
+                        gr.HTML(f"<div style='width:40px;text-align:center'><b>{chr(ord('A') + c)}</b></div>")
                 
                 # Grid rows with row labels (1-10)
                 ai_buttons = []
                 for r in range(GRID_SIZE):
                     with gr.Row():
-                        gr.Markdown(f"**{r + 1}**", scale=1, min_width=40)  # Row label
+                        gr.HTML(f"<div style='width:40px;text-align:center'><b>{r + 1}</b></div>")  # Row label
                         row_btns = []
                         for c in range(GRID_SIZE):
                             btn = gr.Button(cell_symbol(game.ai_grid[r][c], show_ships=False),
