@@ -1,0 +1,176 @@
+# Debugging Log
+
+Single source of truth for all bugs found in this project, their fixes, and the Devin session / PR that resolved each one.
+
+Each bug is documented with: Title, Reported by, Status (Open / In progress / Fixed), Description, Impact, Fix, Devin session, PR.
+
+---
+
+## Bug 1 — Shared click handler across both grids (routing bug)
+
+- **Reported by:** self / analysis
+- **Status:** Open
+- **Description:** Every button on both grids is wired to the same `handle_grid_click(r, c)` (app.py lines ~344-358), which dispatches only on `game.game_phase` (lines ~239-244) and never on which grid was clicked. During the "placement" phase, clicking a cell on the AI grid still calls `game.place_ship` and places a player ship; during "playing", clicking the player grid calls `game.player_attack` and fires at the AI.
+- **Impact:** Clicks are routed to the wrong board. Players can place ships by clicking the enemy board and attack the enemy by clicking their own board, which makes the two-grid layout meaningless and confuses the game model.
+- **Fix (proposed):** Differentiate player vs AI grid clicks (e.g. pass an `is_ai_grid` flag into the handler) so that placement only affects the player grid and attacks only affect the AI grid; reject clicks on the wrong grid with an explanatory message.
+- **Devin session:** _(to fill in when the fix starts)_
+- **PR:** _(to fill in when opened)_
+
+---
+
+## Bug 2 — Interactive buttons never reflect game state (UI/UX)
+
+- **Reported by:** user
+- **Status:** Open
+- **Description:** The `gr.Button` grids (`player_buttons`, `ai_buttons`) are hard-coded to "🌊" (lines ~316, ~331) and are never included in any handler's `outputs` (lines ~347-358), so they remain water forever. Only the separate `gr.HTML` panels (`player_display`, `ai_display`) show the true board state, and those panels are not clickable.
+- **Impact:** The clickable board and the visible board are two different widgets. The player cannot see which cells they already attacked on the interactive grid, and must cross-reference the static HTML panel, which is a poor and error-prone experience.
+- **Fix (proposed):** Collapse the duplicated layout into a single interactive board: make the buttons both clickable and stateful by returning `gr.update(value=symbol)` for all cells from `handle_grid_click` and `reset_game_handler`, and add the flattened button lists to their `outputs`. Remove the now-redundant `gr.HTML` panels.
+- **Devin session:** _(to fill in when the fix starts)_
+- **PR:** _(to fill in when opened)_
+
+---
+
+## Bug 3 — AI ship placement can silently fail, producing an unwinnable game
+
+- **Reported by:** self / analysis
+- **Status:** Open
+- **Description:** `_place_ai_ships` gives up after 100 attempts with `placed` still False (lines ~44-65) and moves on to the next ship without reporting anything. Meanwhile the win condition uses the hardcoded `total_ship_cells = sum(SHIPS.values())` (line ~27, checked at line ~140).
+- **Impact:** The AI board may contain fewer than 17 ship cells, so the player can never reach `player_hits >= 17` and the game becomes unwinnable.
+- **Fix (proposed):** Guarantee placement — retry from a fresh grid (or raise/relax the attempt cap and loop until success) so the AI board always contains exactly 17 ship cells.
+- **Devin session:** _(to fill in when the fix starts)_
+- **PR:** _(to fill in when opened)_
+
+---
+
+## Bug 4 — Global game state shared across all sessions
+
+- **Reported by:** self / analysis
+- **Status:** Open
+- **Description:** `game = BattleshipGame()` is a single module-level instance (line ~200) used directly by every handler, so all Gradio clients and browser tabs share one board, one turn, and one placement phase.
+- **Impact:** Two concurrent users (or even two tabs of the same user) corrupt each other's game: ships placed by one appear for the other, turns interleave, and resets wipe out other players' games.
+- **Fix (proposed):** Move game state to per-session storage (e.g. a `gr.State` holding a `BattleshipGame`, or a session-scoped instance keyed by Gradio session hash) and thread it through every handler.
+- **Devin session:** _(to fill in when the fix starts)_
+- **PR:** _(to fill in when opened)_
+
+---
+
+## Bug 5 — AI target-queue cells popped without re-validation
+
+- **Reported by:** self / analysis
+- **Status:** Open
+- **Description:** In smart-targeting mode `_ai_attack` pops a cell from `ai_target_queue` (line ~158) and acts on it immediately, without re-checking that the cell is still `~` or `S`. Cells are only validated at insertion time (lines ~177-182), so a cell queued earlier may already have been resolved by a later attack.
+- **Impact:** The AI can "attack" an already-hit or already-missed cell, overwriting the mark and potentially double-counting a hit (`ai_hits += 1` on a cell already marked `X`), which can end the game early or produce misleading board state.
+- **Fix (proposed):** Re-validate popped cells against the current `player_grid`; skip resolved cells in a loop and fall back to a random attack when the queue drains.
+- **Devin session:** _(to fill in when the fix starts)_
+- **PR:** _(to fill in when opened)_
+
+---
+
+## Bug 6 — `turn` reset unconditionally even after the game ends
+
+- **Reported by:** self / analysis
+- **Status:** Open
+- **Description:** After the AI moves, `player_attack` always sets `self.turn = "player"` (line ~150), even when `_ai_attack` has just set `game_phase = "ended"` because the AI won.
+- **Impact:** Turn state is inconsistent with the ended phase, which makes any turn-based guard unreliable and can mislead future logic that checks `turn` rather than `game_phase`.
+- **Fix (proposed):** Only set `turn = "player"` when `game_phase != "ended"`.
+- **Devin session:** _(to fill in when the fix starts)_
+- **PR:** _(to fill in when opened)_
+
+---
+
+## Bug 7 — AI targeting never resets when a ship is sunk
+
+- **Reported by:** self / analysis
+- **Status:** Open
+- **Description:** The game tracks only a total hit count and never per-ship sinking. After the AI destroys a ship, `ai_target_mode` stays True and stale adjacent cells from that ship remain in `ai_target_queue` (lines ~172-182). The mode is only cleared when the queue happens to empty on a miss (lines ~193-195).
+- **Impact:** The AI wastes turns hunting around an already-sunk ship instead of resuming its search, and the "smart targeting" heuristic behaves incoherently — a subtle difficulty/quality bug.
+- **Fix (proposed):** Track ship identity per cell so sinking can be detected; when a ship is fully destroyed, clear the target queue and `ai_target_mode` (or re-anchor the queue to remaining unresolved hits).
+- **Devin session:** _(to fill in when the fix starts)_
+- **PR:** _(to fill in when opened)_
+
+---
+
+## Bug 8 — "Ended" phase clicks overwrite the win/loss message
+
+- **Reported by:** self / analysis
+- **Status:** Open
+- **Description:** `player_attack` returns the win string but never assigns it to `self.message` (lines ~140-142); `_ai_attack` does the same for the AI win (lines ~186-188). After the game ends, further clicks fall into the `else` branch of `handle_grid_click` and return the stale `game.message` (lines ~245-246).
+- **Impact:** The victory/defeat banner disappears as soon as the player clicks anywhere, replaced by an outdated status line — the player may not know the game is over.
+- **Fix (proposed):** Assign the win/loss text to `self.message` so it persists, and ignore (or re-show the end message on) post-game clicks.
+- **Devin session:** _(to fill in when the fix starts)_
+- **PR:** _(to fill in when opened)_
+
+---
+
+## Bug 9 — Orientation toggle has no visual preview and no fit validation
+
+- **Reported by:** self / analysis
+- **Status:** Open
+- **Description:** `toggle_orientation` (lines ~115-121) only flips a string and returns a message; its wiring outputs to `message_box` only (lines ~360-363). Nothing checks whether the current ship can fit in the new orientation until a placement attempt fails (lines ~91-92), and nothing previews where the ship would go.
+
+  Clarification (confirmed): `toggle_orientation` does **not** corrupt state or crash. The potential `IndexError` on `self.ship_names[self.current_ship_index]` is prevented because the method is gated behind `game_phase == "placement"`, so `current_ship_index` is always 0-4; and `place_ship` re-validates via `_can_place_ship`, so a bad orientation only yields an error message with no grid writes. Separately, the toggle message overwrites any prior status text in the message box.
+- **Impact:** Placement is trial-and-error: the player cannot see the ship footprint before clicking and only learns a position is invalid after a failed attempt, and the toggle wipes the previous status message.
+- **Fix (proposed):** Preview the prospective placement (e.g. hover/selected-cell highlight) and/or warn in the status text when the current ship cannot fit anywhere in the chosen orientation; preserve relevant prior status information.
+- **Devin session:** _(to fill in when the fix starts)_
+- **PR:** _(to fill in when opened)_
+
+---
+
+## Bug 10 — Ships can be placed directly adjacent
+
+- **Reported by:** self / analysis
+- **Status:** Open
+- **Description:** `_can_place_ship` (lines ~67-81) only checks bounds and cell emptiness; there is no one-cell buffer between ships, so ships may touch side by side or end to end (for both player and AI placement).
+- **Impact:** Depends on the intended rules variant. Under classic tournament rules ships may not touch; touching ships also weaken the AI's adjacency heuristic and can make two ships read as one.
+- **Fix (proposed):** Confirm the intended rules variant with the user; optionally enforce a no-touching rule by rejecting placements with an occupied cell in the 8-neighbourhood of any ship cell.
+- **Devin session:** _(to fill in when the fix starts)_
+- **PR:** _(to fill in when opened)_
+
+---
+
+## Bug 11 — Reset (and toggle) do not refresh the interactive buttons
+
+- **Reported by:** self / analysis
+- **Status:** Open
+- **Description:** `reset_game_handler` (lines ~265-270) and its wiring (lines ~365-368) output only to the HTML panels and the message box, never to the button grids. This is a facet of bug #2.
+- **Impact:** After a reset the interactive board keeps whatever labels it had, so the clickable board disagrees with the actual (fresh) game state.
+- **Fix (proposed):** Once the board is merged into a single interactive grid (bug #2), include the flattened buttons in the `outputs` of `reset_game_handler` and any other handler that changes board state.
+- **Devin session:** _(to fill in when the fix starts)_
+- **PR:** _(to fill in when opened)_
+
+---
+
+## Bug 12 — Dead / unused code
+
+- **Reported by:** self / analysis
+- **Status:** Open
+- **Description:** `handle_cell_click` is an empty stub (lines ~253-258), `create_interactive_grid` is defined but never called (lines ~272-290), and the `clickable` parameter of `create_grid_display` (line ~202) is never used.
+- **Impact:** Dead code misleads readers about how input is handled and adds maintenance noise.
+- **Fix (proposed):** Remove the stub, the unused factory, and the unused parameter during the board-merge refactor (bugs #1/#2).
+- **Devin session:** _(to fill in when the fix starts)_
+- **PR:** _(to fill in when opened)_
+
+---
+
+## Bug 13 — Grid axis labels don't follow standard Battleship convention
+
+- **Reported by:** self / analysis
+- **Status:** Open
+- **Description:** In `create_grid_display`, the column header loop (lines ~208-211) prints `0`-`9` and the row header (lines ~213-214) prints `0`-`9`. Standard Battleship uses letters `A`-`J` for columns and numbers `1`-`10` for rows.
+- **Impact:** Coordinates shown to the player don't match the conventional notation ("B4"), making the board harder to read and status messages harder to relate to the grid.
+- **Fix (proposed):** Render column headers as letters (`chr(ord('A') + i)`) and row headers as `1`-`10` (`r + 1`), keeping internal `grid[r][c]` indexing 0-based. Once bugs #1/#2 merge the HTML board into the button board, re-create these labels as separate label widgets around the button grid.
+- **Devin session:** _(to fill in when the fix starts)_
+- **PR:** _(to fill in when opened)_
+
+---
+
+## Bug 14 — Game state lost / silently desynced on page refresh
+
+- **Reported by:** self / analysis
+- **Status:** Open
+- **Description:** State lives in the module-level singleton `game = BattleshipGame()`, and the widget initial values are computed once at module load (message box line ~298, HTML panels lines ~307/~322). On refresh the server keeps the game but the page re-renders the initial empty board, so the UI desyncs from the real state. If bug #4 is fixed to per-session state, a refresh instead loses the game entirely.
+- **Impact:** An accidental refresh either shows a board that is wrong or throws away the game in progress, with no warning.
+- **Fix (tier a, approved):** Inject a `beforeunload` confirmation popup via the `js=` parameter of `gr.Blocks` (line ~293), falling back to `head=` with an inline `<script>` if the pinned Gradio version does not support `js=` (check `app.yaml` / requirements).
+- **Fix (tier b, Open follow-up):** Full persistence via localStorage or a server-side session store, coordinated with bug #4.
+- **Devin session:** _(to fill in when the fix starts)_
+- **PR:** _(to fill in when opened)_
