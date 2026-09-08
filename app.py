@@ -598,7 +598,7 @@ def create_interactive_grid(grid, is_ai_grid=False):
     return buttons
 
 # Create Gradio interface
-with gr.Blocks(title="Battleship Game", css=WORD_MODE_CSS) as app:
+with gr.Blocks(title="Battleship Game") as app:
     with gr.Column(elem_id="root-container") as root_container:
         gr.Markdown("# 🚢 Battleship Game")
         gr.Markdown("### Human vs AI")
@@ -716,4 +716,4 @@ with gr.Blocks(title="Battleship Game", css=WORD_MODE_CSS) as app:
         )
 
 if __name__ == "__main__":
-    app.launch()
+    app.launch(css=WORD_MODE_CSS)
