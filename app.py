@@ -1004,6 +1004,9 @@ function checkForGameEvents() {
         if (text !== lastMessageText) {
             console.log('📝 Message changed:', text);
             lastMessageText = text;
+            if (!text.includes('You Win!') && !text.includes('🎉')) {
+                victoryTriggered = false;  // new game started; allow the next win to celebrate
+            }
             
             // 'words found' also appears in the word-mode win message, so the last word chimes too
             const wordSolved = text.includes('solved!') || text.includes('words found');
