@@ -1,6 +1,7 @@
 import gradio as gr
 import random
 import copy
+import os
 
 # Game constants
 GRID_SIZE = 10
@@ -797,4 +798,8 @@ with gr.Blocks(title="Battleship Game") as app:
         )
 
 if __name__ == "__main__":
-    app.launch(css=WORD_MODE_CSS)
+    app.launch(
+        css=WORD_MODE_CSS,
+        server_name="0.0.0.0",
+        server_port=int(os.environ.get("PORT", 7860))
+    )
