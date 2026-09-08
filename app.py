@@ -830,7 +830,7 @@ const BEAT = 60 / BGM_BPM;
 const BGM_LEAD = [
     ['C5', .5], ['D5', .5], ['E5', .5], ['G5', .5], ['E5', .5], ['D5', .5], ['C5', 1],
     ['A4', .5], ['C5', .5], ['E5', 1], ['D5', .5], ['B4', .5], ['G4', 1],
-    ['C5', .75], ['R', .25], ['G4', .75], ['R', .25], ['E4', 1.5],
+    ['C5', .75], ['R', .25], ['G4', .75], ['R', .25], ['E4', 2],
     ['A4', .5], ['B4', .5], ['R', .5], ['A4', .5], ['G4', .5], ['E5', .5], ['G5', .5], ['A5', .5],
     ['F5', .5], ['G5', .5], ['R', .5], ['E5', .5], ['C5', .5], ['D5', .5], ['B4', 1],
     ['D5', .5], ['E5', .5], ['F5', .5], ['D5', .5], ['E5', .5], ['C5', .5], ['A4', .5], ['G4', .5],
@@ -877,14 +877,18 @@ function scheduleTrack(track, type, volume, startAt) {
     return t;
 }
 
+// Keep several seconds of audio queued so throttled background-tab timers can't cause gaps
+const BGM_LOOKAHEAD_SEC = 6;
+
 function scheduleBgmLoop() {
     if (!bgmOn || !audioContext) return;
-    const start = Math.max(bgmNextLoopAt, audioContext.currentTime + 0.05);
-    scheduleTrack(BGM_LEAD, 'square', 0.08, start);
-    const end = scheduleTrack(BGM_BASS, 'triangle', 0.16, start);
-    bgmNextLoopAt = end;
-    // Schedule the next pass shortly before this one finishes
-    bgmTimer = setTimeout(scheduleBgmLoop, Math.max(0, (end - audioContext.currentTime - 0.5) * 1000));
+    const now = audioContext.currentTime;
+    if (bgmNextLoopAt < now) bgmNextLoopAt = now + 0.05;
+    while (bgmNextLoopAt < now + BGM_LOOKAHEAD_SEC) {
+        scheduleTrack(BGM_LEAD, 'square', 0.08, bgmNextLoopAt);
+        bgmNextLoopAt = scheduleTrack(BGM_BASS, 'triangle', 0.16, bgmNextLoopAt);
+    }
+    bgmTimer = setTimeout(scheduleBgmLoop, 1000);
 }
 
 function startBgm() {
