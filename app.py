@@ -98,7 +98,8 @@ class BattleshipGame:
         
         chosen = []
         for length in WORD_SLOT_LENGTHS:
-            options = [w for w in TARGET_WORD_BANK[length] if w not in chosen]
+            options = [w for w in TARGET_WORD_BANK[length]
+                       if not any(w in prev or prev in w for prev in chosen)]
             chosen.append(random.choice(options))
         
         if not self._backtrack_place_ships([(w, len(w)) for w in chosen], 0, letters=True):
@@ -132,7 +133,11 @@ class BattleshipGame:
     def _stray_word_cells(self):
         """Cells of straight runs spelling a bank word (either direction) that are not a recorded placement."""
         bank = set(TARGET_WORD_BANK_ALL) | set(DECOY_WORD_BANK)
-        recorded = {tuple(w["cells"]) for w in self.target_words + self.decoy_words}
+        recorded = [w["cells"] for w in self.target_words + self.decoy_words]
+        
+        def is_recorded(run):
+            return any(cells[i:i + len(run)] == run
+                       for cells in recorded for i in range(len(cells) - len(run) + 1))
         stray = set()
         lines = [[(r, c) for c in range(GRID_SIZE)] for r in range(GRID_SIZE)]
         lines += [[(r, c) for r in range(GRID_SIZE)] for c in range(GRID_SIZE)]
@@ -141,7 +146,7 @@ class BattleshipGame:
                 for size in range(2, GRID_SIZE - start + 1):
                     run = line[start:start + size]
                     text = "".join(self.ai_ships[r][c] for r, c in run)
-                    if (text in bank or text[::-1] in bank) and tuple(run) not in recorded:
+                    if (text in bank or text[::-1] in bank) and not is_recorded(run):
                         stray.update(run)
         return stray
     
