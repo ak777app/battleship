@@ -490,9 +490,6 @@ class BattleshipGame:
         
         return result
 
-# Global game instance
-game = BattleshipGame()
-
 def format_coordinate(row, col):
     """Convert (row, col) to standard Battleship notation (e.g., 'B4')"""
     return f"{chr(ord('A') + col)}{row + 1}"
@@ -509,7 +506,7 @@ def cell_symbol(cell, show_ships, letters=False):
         return "🚢"
     return "🌊"
 
-def word_cell_update(r, c):
+def word_cell_update(game, r, c):
     """Button update for a word-mode letter cell, styled by solved/selected state"""
     classes = ["word-cell"]
     variant = "secondary"
@@ -523,19 +520,19 @@ def word_cell_update(r, c):
     return gr.update(value=cell_symbol(game.ai_ships[r][c], show_ships=True, letters=True),
                      variant=variant, elem_classes=classes)
 
-def board_updates():
+def board_updates(game):
     """Button updates for both boards, flattened player-first then AI"""
     updates = [gr.update(value=cell_symbol(game.player_grid[r][c], show_ships=True))
                for r in range(GRID_SIZE) for c in range(GRID_SIZE)]
     if game.mode == "word":
-        updates += [word_cell_update(r, c) for r in range(GRID_SIZE) for c in range(GRID_SIZE)]
+        updates += [word_cell_update(game, r, c) for r in range(GRID_SIZE) for c in range(GRID_SIZE)]
     else:
         updates += [gr.update(value=cell_symbol(game.ai_grid[r][c], show_ships=False))
                     for r in range(GRID_SIZE) for c in range(GRID_SIZE)]
     return updates
 
-def handle_grid_click(row, col, is_ai_grid):
-    """Handle grid clicks for placement and attacking"""
+def handle_grid_click(game, row, col, is_ai_grid):
+    """Handle grid clicks for placement and attacking; returns [game, message, *board updates]"""
     if game.mode == "word":
         msg = game.select_cell(row, col) if is_ai_grid else game.message
     elif game.game_phase == "placement":
@@ -551,7 +548,7 @@ def handle_grid_click(row, col, is_ai_grid):
     else:
         msg = game.message
     
-    return [msg] + board_updates()
+    return [game, msg] + board_updates(game)
 
 def handle_cell_click(evt: gr.SelectData):
     """Handle click events on the grids"""
@@ -560,17 +557,16 @@ def handle_cell_click(evt: gr.SelectData):
     # For now, this is handled by separate buttons for each cell
     pass
 
-def orientation_toggle():
+def orientation_toggle(game):
     """Toggle ship orientation"""
-    msg = game.toggle_orientation()
-    return msg
+    return [game, game.toggle_orientation()]
 
-def reset_game_handler():
+def reset_game_handler(game):
     """Reset the game"""
     game.reset_game()
-    return [game.message] + board_updates()
+    return [game, game.message] + board_updates(game)
 
-def mode_view_updates():
+def mode_view_updates(game):
     """Visibility / label / theme updates for the current mode"""
     word = game.mode == "word"
     heading = ("### Word Puzzle Grid — click letters to spell words" if word
@@ -585,19 +581,19 @@ def mode_view_updates():
         gr.update(elem_classes=["word-mode"] if word else []),         # root container
     ]
 
-def toggle_mode_handler():
+def toggle_mode_handler(game):
     """Switch classic <-> word mode and start a fresh game"""
     game.toggle_mode()
-    board = board_updates()
+    board = board_updates(game)
     if game.mode == "classic":
         # Strip word-mode button styling before re-rendering the classic boards
         for upd in board[GRID_SIZE * GRID_SIZE:]:
             upd["variant"] = "secondary"
             upd["elem_classes"] = []
-    return [game.message] + board + mode_view_updates()
+    return [game, game.message] + board + mode_view_updates(game)
 
-def clear_selection_handler():
-    return [game.clear_selection()] + board_updates()
+def clear_selection_handler(game):
+    return [game, game.clear_selection()] + board_updates(game)
 
 ARCADE_CSS = """
 /* Import retro gaming font */
@@ -1163,12 +1159,15 @@ def create_interactive_grid(grid, is_ai_grid=False):
 
 # Create Gradio interface
 with gr.Blocks(title="Battleship Game") as app:
+    # Each browser session gets its own deep copy of this initial game
+    initial_game = BattleshipGame()
+    game_state = gr.State(initial_game)
     with gr.Column(elem_id="root-container") as root_container:
         gr.Markdown("# 🚢 Battleship Game", elem_id="game-title")
         gr.Markdown("### Human vs AI", elem_id="game-subtitle")
     
         with gr.Row():
-            message_box = gr.Textbox(label="Game Status", value=game.message, interactive=False)
+            message_box = gr.Textbox(label="Game Status", value=initial_game.message, interactive=False)
     
         with gr.Row():
             toggle_btn = gr.Button("Toggle Orientation (Horizontal/Vertical)")
@@ -1194,7 +1193,7 @@ with gr.Blocks(title="Battleship Game") as app:
                             gr.HTML(f"<div style='text-align:center'><b>{r + 1}</b></div>", elem_classes=["row-label"])  # Row label
                             row_btns = []
                             for c in range(GRID_SIZE):
-                                btn = gr.Button(cell_symbol(game.player_grid[r][c], show_ships=True),
+                                btn = gr.Button(cell_symbol(initial_game.player_grid[r][c], show_ships=True),
                                                 size="sm", scale=1, min_width=40)
                                 row_btns.append(btn)
                             player_buttons.append(row_btns)
@@ -1216,7 +1215,7 @@ with gr.Blocks(title="Battleship Game") as app:
                             gr.HTML(f"<div style='text-align:center'><b>{r + 1}</b></div>", elem_classes=["row-label"])  # Row label
                             row_btns = []
                             for c in range(GRID_SIZE):
-                                btn = gr.Button(cell_symbol(game.ai_grid[r][c], show_ships=False),
+                                btn = gr.Button(cell_symbol(initial_game.ai_grid[r][c], show_ships=False),
                                                 size="sm", scale=1, min_width=40)
                                 row_btns.append(btn)
                             ai_buttons.append(row_btns)
@@ -1248,13 +1247,14 @@ with gr.Blocks(title="Battleship Game") as app:
     
         flat_buttons = ([player_buttons[r][c] for r in range(GRID_SIZE) for c in range(GRID_SIZE)] +
                         [ai_buttons[r][c] for r in range(GRID_SIZE) for c in range(GRID_SIZE)])
-        board_outputs = [message_box] + flat_buttons
+        board_outputs = [game_state, message_box] + flat_buttons
     
         # Wire up player grid clicks (for placement)
         for r in range(GRID_SIZE):
             for c in range(GRID_SIZE):
                 player_buttons[r][c].click(
-                    fn=lambda r=r, c=c: handle_grid_click(r, c, is_ai_grid=False),
+                    fn=lambda g, r=r, c=c: handle_grid_click(g, r, c, is_ai_grid=False),
+                    inputs=[game_state],
                     outputs=board_outputs
                 )
     
@@ -1262,27 +1262,32 @@ with gr.Blocks(title="Battleship Game") as app:
         for r in range(GRID_SIZE):
             for c in range(GRID_SIZE):
                 ai_buttons[r][c].click(
-                    fn=lambda r=r, c=c: handle_grid_click(r, c, is_ai_grid=True),
+                    fn=lambda g, r=r, c=c: handle_grid_click(g, r, c, is_ai_grid=True),
+                    inputs=[game_state],
                     outputs=board_outputs
                 )
     
         toggle_btn.click(
             fn=orientation_toggle,
-            outputs=[message_box]
+            inputs=[game_state],
+            outputs=[game_state, message_box]
         )
     
         reset_btn.click(
             fn=reset_game_handler,
+            inputs=[game_state],
             outputs=board_outputs
         )
     
         mode_btn.click(
             fn=toggle_mode_handler,
+            inputs=[game_state],
             outputs=board_outputs + [player_heading, toggle_btn, clear_btn, ai_heading, mode_btn, root_container]
         )
     
         clear_btn.click(
             fn=clear_selection_handler,
+            inputs=[game_state],
             outputs=board_outputs
         )
 
