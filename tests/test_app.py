@@ -181,7 +181,7 @@ def test_place_all_ships_starts_game(classic):
 
 def test_place_ship_out_of_bounds(classic):
     msg = classic.place_ship(0, 6)
-    assert msg == "Cannot place Carrier there! Try another position."
+    assert msg == "Cannot place Carrier horizontal at G1: it would run off the board."
     assert classic.current_ship_index == 0
     assert count(classic.player_ships, "S") == 0
 
@@ -189,7 +189,7 @@ def test_place_ship_out_of_bounds(classic):
 def test_place_ship_overlapping(classic):
     classic.place_ship(0, 0)
     msg = classic.place_ship(0, 4)  # Battleship over last Carrier cell
-    assert msg == "Cannot place Battleship there! Try another position."
+    assert msg == "Cannot place Battleship horizontal at E1: it overlaps another ship."
     assert classic.current_ship_index == 1
     assert count(classic.player_ships, "S") == 5
 
@@ -439,6 +439,167 @@ def test_ai_attack_win(playing):
 def test_ai_attack_no_moves(playing):
     playing.player_grid = [["O" for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
     assert playing._ai_attack() == "AI has no moves!"
+
+
+# --------------------------------------------------------------------------- bugs 5-8 (AI queue, turn, sinking, end message)
+
+def test_ai_attack_skips_already_resolved_queue_cells(playing, monkeypatch):
+    """Bug 5: queued cells resolved by a later shot are dropped, never re-attacked"""
+    playing.player_grid[2][2] = "O"
+    playing.player_grid[3][3] = "X"
+    playing.player_ships[3][3] = "S"
+    playing.ai_hits = 1
+    playing.ai_target_mode = True
+    playing.ai_target_queue = [(2, 2), (3, 3), (5, 5)]
+    monkeypatch.setattr(app.random, "choice", lambda seq: pytest.fail("random.choice must not be used"))
+    playing.player_ships[5][6] = "S"  # (5,5) belongs to a two-cell ship so the hit does not sink it
+    playing.player_fleet = [[(5, 5), (5, 6)], [(3, 3)]]
+    msg = playing._ai_attack()
+    assert msg == "AI Hit your ship at F6!"
+    assert playing.player_grid[2][2] == "O" and playing.player_grid[3][3] == "X"
+    assert playing.ai_hits == 2
+
+
+def test_ai_attack_queue_fully_resolved_falls_back_to_random(playing, monkeypatch):
+    playing.player_grid[2][2] = "O"
+    playing.ai_target_mode = True
+    playing.ai_target_queue = [(2, 2)]
+    monkeypatch.setattr(app.random, "choice", lambda seq: (1, 1))
+    assert playing._ai_attack() == "AI Missed at B2"
+    assert playing.ai_target_queue == []
+    assert playing.ai_target_mode is False
+
+
+def test_ai_attack_sinking_ship_resets_targeting(playing):
+    """Bug 7: once a ship is fully hit, the AI stops hunting around it"""
+    playing.player_ships[5][6] = "S"
+    playing.player_grid[5][6] = "X"
+    playing.player_fleet = [[(5, 5), (5, 6)]]
+    playing.total_ship_cells = 5
+    playing.ai_hits = 1
+    playing.ai_target_mode = True
+    playing.ai_target_queue = [(5, 5), (4, 6)]
+    msg = playing._ai_attack()
+    assert msg == "AI sank your ship at F6!"
+    assert playing.ai_target_mode is False
+    assert playing.ai_target_queue == []
+    assert playing.ai_last_hit is None
+
+
+def test_ai_attack_sinking_keeps_hunting_other_damaged_ship(playing):
+    """Touching ships: sinking one must not drop targets around another damaged ship"""
+    playing.player_ships[5][6] = "S"          # ship A: (5,5),(5,6) - (5,6) already hit
+    playing.player_grid[5][6] = "X"
+    for c in (6, 7, 8):                        # ship B: (6,6),(6,7),(6,8) - (6,6) already hit
+        playing.player_ships[6][c] = "S"
+    playing.player_grid[6][6] = "X"
+    playing.player_fleet = [[(5, 5), (5, 6)], [(6, 6), (6, 7), (6, 8)]]
+    playing.total_ship_cells = 5
+    playing.ai_hits = 2
+    playing.ai_target_mode = True
+    playing.ai_target_queue = [(5, 5), (4, 5), (7, 6)]
+    assert playing._ai_attack() == "AI sank your ship at F6!"
+    assert playing.ai_target_mode is True
+    assert set(playing.ai_target_queue) == {(7, 6), (6, 5), (6, 7)}
+    assert (4, 5) not in playing.ai_target_queue and (4, 6) not in playing.ai_target_queue
+
+
+def test_ship_sunk_unknown_cell(playing):
+    playing.player_fleet = [[(5, 5)]]
+    assert playing._ship_sunk(0, 0) is False
+
+
+def test_place_ship_records_fleet(classic):
+    classic.place_ship(0, 0)
+    classic.toggle_orientation()
+    classic.place_ship(2, 0)
+    assert classic.player_fleet == [[(0, i) for i in range(5)], [(2 + i, 0) for i in range(4)]]
+
+
+def test_auto_place_records_fleet(word):
+    assert len(word.player_fleet) == len(SHIPS)
+    assert sorted(len(cells) for cells in word.player_fleet) == sorted(SHIPS.values())
+    assert all(word.player_ships[r][c] == "S" for cells in word.player_fleet for r, c in cells)
+
+
+def test_player_attack_win_persists_message(playing, quiet_ai):
+    """Bug 8: the win banner is stored so later clicks keep showing it"""
+    playing.player_hits = playing.total_ship_cells - 1
+    playing.player_attack(0, 0)
+    assert playing.message == "🎉 You Win! All AI ships destroyed!"
+    assert handle_grid_click(playing, 3, 3, is_ai_grid=True)[1] == playing.message
+
+
+def test_player_attack_ai_win_keeps_turn_and_message(playing, monkeypatch):
+    """Bugs 6 + 8: when the AI wins on its reply, turn is not reset and the loss message sticks"""
+    playing.ai_hits = playing.total_ship_cells - 1
+    playing.ai_target_mode = True
+    playing.ai_target_queue = [(5, 5)]
+    msg = playing.player_attack(7, 7)
+    assert msg == "💀 AI Wins! All your ships destroyed!"
+    assert playing.message == msg
+    assert playing.game_phase == "ended"
+    assert playing.turn == "ai"
+
+
+def test_player_attack_stores_round_message(playing, quiet_ai):
+    playing.player_attack(0, 1)
+    assert playing.message == "Hit at B1!\nAI Missed at J10"
+
+
+# --------------------------------------------------------------------------- bug 9 / 14 (orientation warning, front-end info)
+
+def test_toggle_orientation_warns_when_no_fit(classic):
+    for r in range(GRID_SIZE):
+        for c in range(GRID_SIZE):
+            if r not in (0, 9):
+                classic.player_ships[r][c] = "S"
+    msg = classic.toggle_orientation()  # vertical Carrier can no longer fit anywhere
+    assert msg.startswith("Orientation: vertical. Place Carrier (5 cells)")
+    assert "no vertical spot is free" in msg
+    assert classic.message == msg
+
+
+def test_toggle_orientation_sets_message(classic):
+    classic.toggle_orientation()
+    assert classic.message == "Orientation: vertical. Place Carrier (5 cells)"
+
+
+def test_placement_info_classic_progress(classic):
+    html = app.placement_info(classic)["value"]
+    assert 'data-phase="placement"' in html and 'data-size="5"' in html
+    assert 'data-orient="horizontal"' in html and 'data-progress="0"' in html
+    classic.place_ship(0, 0)
+    html = app.placement_info(classic)["value"]
+    assert 'data-size="4"' in html and 'data-progress="1"' in html
+
+
+def test_placement_info_progress_after_fleet_placed_before_first_shot(classic):
+    for i in range(len(SHIPS)):
+        classic.place_ship(i * 2, 0)
+    assert classic.game_phase == "playing"
+    html = app.placement_info(classic)["value"]
+    assert 'data-size="0"' in html and 'data-progress="1"' in html
+
+
+def test_placement_info_playing_and_ended(playing, quiet_ai):
+    assert 'data-progress="0"' in app.placement_info(playing)["value"]
+    playing.player_attack(7, 7)
+    html = app.placement_info(playing)["value"]
+    assert 'data-phase="playing"' in html and 'data-size="0"' in html and 'data-progress="1"' in html
+    playing.game_phase = "ended"
+    assert 'data-progress="0"' in app.placement_info(playing)["value"]
+
+
+def test_placement_info_word_mode(word, quiet_ai):
+    assert 'data-progress="0"' in app.placement_info(word)["value"]
+    word.player_grid[0][0] = "O"
+    assert 'data-progress="1"' in app.placement_info(word)["value"]
+
+
+def test_game_js_has_preview_and_unload_guard():
+    assert "beforeunload" in app.GAME_JS
+    assert "pcell-" in app.GAME_JS and "preview-ok" in app.GAME_JS
 
 
 # --------------------------------------------------------------------------- word mode
@@ -798,7 +959,7 @@ def test_auto_place_player_ships_isolated(word):
 
 
 def test_auto_place_player_ships_gives_up(word, monkeypatch):
-    monkeypatch.setattr(BattleshipGame, "_place_spread_fleet", lambda self, grid: False)
+    monkeypatch.setattr(BattleshipGame, "_place_spread_fleet", lambda self, grid, fleet=None: False)
     with pytest.raises(RuntimeError, match="auto-place"):
         word._auto_place_player_ships()
 
@@ -874,10 +1035,10 @@ def test_board_updates_word(global_word):
 
 def test_handle_grid_click_word_mode(global_word, quiet_ai):
     result = handle_grid_click(global_word, 0, 0, is_ai_grid=True)
-    assert len(result) == 2 + 2 * CELLS
+    assert len(result) == 3 + 2 * CELLS
     assert result[1].startswith("Selected: F (1 letters).")
     assert global_word.selected_cells == [(0, 0)]
-    assert result[2 + CELLS]["variant"] == "primary"
+    assert result[3 + CELLS]["variant"] == "primary"
     # own grid is inert in word mode
     result = handle_grid_click(global_word, 5, 5, is_ai_grid=False)
     assert result[1] == global_word.message
@@ -890,8 +1051,8 @@ def test_handle_grid_click_placement(global_classic):
     assert global_classic.current_ship_index == 0
     result = handle_grid_click(global_classic, 0, 0, is_ai_grid=False)
     assert result[1] == "Place your Battleship (4 cells)"
-    assert len(result) == 2 + 2 * CELLS
-    assert [u["value"] for u in result[2:7]] == ["🚢"] * 5
+    assert len(result) == 3 + 2 * CELLS
+    assert [u["value"] for u in result[3:8]] == ["🚢"] * 5
 
 
 def test_handle_grid_click_playing(global_classic, quiet_ai):
@@ -902,7 +1063,7 @@ def test_handle_grid_click_playing(global_classic, quiet_ai):
     assert global_classic.ai_grid[3][3] == "~"
     result = handle_grid_click(global_classic, 3, 3, is_ai_grid=True)
     assert result[1] == "Miss at D4\nAI Missed at J10"
-    assert result[2 + CELLS + 33]["value"] == "⚪"
+    assert result[3 + CELLS + 33]["value"] == "⚪"
 
 
 def test_handle_grid_click_ended(global_classic):
@@ -911,22 +1072,20 @@ def test_handle_grid_click_ended(global_classic):
     assert handle_grid_click(global_classic, 0, 0, is_ai_grid=True)[1] == "over"
 
 
-def test_handle_cell_click_is_noop():
-    assert app.handle_cell_click(None) is None
-
-
 def test_orientation_toggle(global_classic):
-    assert orientation_toggle(global_classic) == [global_classic, "Orientation: vertical. Place Carrier (5 cells)"]
+    result = orientation_toggle(global_classic)
+    assert result[:2] == [global_classic, "Orientation: vertical. Place Carrier (5 cells)"]
+    assert 'data-orient="vertical"' in result[2]["value"]
     assert global_classic.ship_orientation == "vertical"
 
 
 def test_reset_game_handler(global_classic):
     global_classic.place_ship(0, 0)
     result = reset_game_handler(global_classic)
-    assert len(result) == 2 + 2 * CELLS
+    assert len(result) == 3 + 2 * CELLS
     assert result[1] == "Place your Carrier (5 cells)"
     assert global_classic.current_ship_index == 0
-    assert all(u["value"] == "🌊" for u in result[2:])
+    assert all(u["value"] == "🌊" for u in result[3:])
 
 
 def test_mode_view_updates(global_classic):
@@ -951,9 +1110,9 @@ def test_mode_view_updates(global_classic):
 def test_toggle_mode_handler_to_word(global_classic):
     result = toggle_mode_handler(global_classic)
     assert global_classic.mode == "word"
-    assert len(result) == 2 + 2 * CELLS + 6
+    assert len(result) == 3 + 2 * CELLS + 6
     assert "Solved 0/5" in result[1]
-    ai_updates = result[2 + CELLS:1 + 2 * CELLS]
+    ai_updates = result[3 + CELLS:1 + 2 * CELLS]
     assert all("word-cell" in u["elem_classes"] for u in ai_updates)
     assert result[-1]["elem_classes"] == ["word-mode"]
 
@@ -961,9 +1120,9 @@ def test_toggle_mode_handler_to_word(global_classic):
 def test_toggle_mode_handler_back_to_classic_strips_styling(global_word):
     result = toggle_mode_handler(global_word)
     assert global_word.mode == "classic"
-    assert len(result) == 2 + 2 * CELLS + 6
+    assert len(result) == 3 + 2 * CELLS + 6
     assert result[1] == "Place your Carrier (5 cells)"
-    ai_updates = result[2 + CELLS:1 + 2 * CELLS]
+    ai_updates = result[3 + CELLS:1 + 2 * CELLS]
     assert all(u["variant"] == "secondary" and u["elem_classes"] == [] for u in ai_updates)
     assert all(u["value"] == "🌊" for u in ai_updates)
     assert result[-1]["elem_classes"] == []
@@ -974,8 +1133,8 @@ def test_clear_selection_handler(global_word):
     result = app.clear_selection_handler(global_word)
     assert result[1] == "Selection cleared. Solved 0/2"
     assert global_word.selected_cells == []
-    assert len(result) == 2 + 2 * CELLS
-    assert all(u["variant"] == "secondary" for u in result[2 + CELLS:])
+    assert len(result) == 3 + 2 * CELLS
+    assert all(u["variant"] == "secondary" for u in result[3 + CELLS:])
 
 
 def test_handlers_return_game_as_state(global_classic):
@@ -994,14 +1153,3 @@ def test_sessions_do_not_share_state(quiet_ai):
     assert all(cell == "~" for row in b.player_grid for cell in row)
     toggle_mode_handler(b)
     assert b.mode == "word" and a.mode == "classic"
-
-
-def test_create_interactive_grid():
-    grid = empty_grid()
-    grid[0][0] = "X"
-    grid[0][1] = "O"
-    grid[0][2] = "S"
-    buttons = app.create_interactive_grid(grid)
-    assert len(buttons) == GRID_SIZE and all(len(row) == GRID_SIZE for row in buttons)
-    assert [b.value for b in buttons[0][:4]] == ["💥", "⚪", "🚢", "🌊"]
-    assert app.create_interactive_grid(grid, is_ai_grid=True)[0][2].value == "🌊"

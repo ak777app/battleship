@@ -60,6 +60,7 @@ class BattleshipGame:
         self.ship_names = list(SHIPS.keys())
         self.ship_orientation = "horizontal"
         self.turn = "player"
+        self.player_fleet = []   # list of cell lists, one per player ship (for sink detection)
         
         # AI targeting
         self.ai_last_hit = None
@@ -265,17 +266,17 @@ class BattleshipGame:
         ship_size = SHIPS[ship_name]
         
         if not self._can_place_ship(self.player_ships, row, col, ship_size, self.ship_orientation):
-            return f"Cannot place {ship_name} there! Try another position."
+            end = col + ship_size if self.ship_orientation == "horizontal" else row + ship_size
+            reason = "it would run off the board" if end > GRID_SIZE else "it overlaps another ship"
+            return f"Cannot place {ship_name} {self.ship_orientation} at {format_coordinate(row, col)}: {reason}."
         
         # Place the ship
-        if self.ship_orientation == "horizontal":
-            for i in range(ship_size):
-                self.player_ships[row][col + i] = "S"
-                self.player_grid[row][col + i] = "S"
-        else:
-            for i in range(ship_size):
-                self.player_ships[row + i][col] = "S"
-                self.player_grid[row + i][col] = "S"
+        cells = ([(row, col + i) for i in range(ship_size)] if self.ship_orientation == "horizontal"
+                 else [(row + i, col) for i in range(ship_size)])
+        for r, c in cells:
+            self.player_ships[r][c] = "S"
+            self.player_grid[r][c] = "S"
+        self.player_fleet.append(cells)
         
         self.current_ship_index += 1
         
@@ -288,12 +289,19 @@ class BattleshipGame:
         
         return self.message
     
+    def _fits_anywhere(self, size, orientation):
+        """True if a ship of this size can be placed somewhere on the player's board in this orientation"""
+        return any(self._can_place_ship(self.player_ships, r, c, size, orientation)
+                   for r in range(GRID_SIZE) for c in range(GRID_SIZE))
+    
     def toggle_orientation(self):
         """Toggle ship orientation between horizontal and vertical"""
         if self.game_phase == "placement":
             self.ship_orientation = "vertical" if self.ship_orientation == "horizontal" else "horizontal"
             ship_name = self.ship_names[self.current_ship_index]
-            return f"Orientation: {self.ship_orientation}. Place {ship_name} ({SHIPS[ship_name]} cells)"
+            self.message = f"Orientation: {self.ship_orientation}. Place {ship_name} ({SHIPS[ship_name]} cells)"
+            if not self._fits_anywhere(SHIPS[ship_name], self.ship_orientation):
+                self.message += f" — warning: no {self.ship_orientation} spot is free for it, toggle back!"
         return self.message
     
     def player_attack(self, row, col):
@@ -315,7 +323,8 @@ class BattleshipGame:
             
             if self.player_hits >= self.total_ship_cells:
                 self.game_phase = "ended"
-                return "🎉 You Win! All AI ships destroyed!"
+                self.message = "🎉 You Win! All AI ships destroyed!"
+                return self.message
         else:
             self.ai_grid[row][col] = "O"  # Miss
             result = f"Miss at {format_coordinate(row, col)}"
@@ -323,9 +332,12 @@ class BattleshipGame:
         # AI turn
         self.turn = "ai"
         ai_result = self._ai_attack()
+        if self.game_phase == "ended":
+            self.message = ai_result
+            return ai_result
         self.turn = "player"
-        
-        return f"{result}\n{ai_result}"
+        self.message = f"{result}\n{ai_result}"
+        return self.message
     
     def _auto_place_player_ships(self):
         """Place the player's fleet to resist the AI's hunt: ships never touch (not even
@@ -334,14 +346,17 @@ class BattleshipGame:
         the AI can probe."""
         for _ in range(100):
             grid = [["~" for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
-            if self._place_spread_fleet(grid):
+            fleet = []
+            if self._place_spread_fleet(grid, fleet):
                 self.player_ships = grid
                 self.player_grid = copy.deepcopy(grid)
+                self.player_fleet = fleet
                 return
         raise RuntimeError("Could not auto-place the player's fleet.")
     
-    def _place_spread_fleet(self, grid):
-        """Greedy placement, largest ship first; False if a ship has no isolated spot left."""
+    def _place_spread_fleet(self, grid, fleet=None):
+        """Greedy placement, largest ship first; False if a ship has no isolated spot left.
+        Each placed ship's cells are appended to `fleet` when given."""
         for size in sorted(SHIPS.values(), reverse=True):
             options = []
             for orientation in ("horizontal", "vertical"):
@@ -359,6 +374,8 @@ class BattleshipGame:
             _, _, cells = random.choice(options[:4])
             for r, c in cells:
                 grid[r][c] = "S"
+            if fleet is not None:
+                fleet.append(cells)
         return True
     
     @staticmethod
@@ -445,13 +462,41 @@ class BattleshipGame:
             self.message = f"Selection cleared. Solved {self.solved_count}/{len(self.target_words)}"
         return self.message
     
+    def _unsunk_hit_neighbors(self):
+        """Unattacked cells adjacent to hits on player ships that are not yet sunk"""
+        queue = []
+        for cells in self.player_fleet:
+            if all(self.player_grid[r][c] == "X" for r, c in cells):
+                continue
+            for r, c in cells:
+                if self.player_grid[r][c] != "X":
+                    continue
+                for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    nr, nc = r + dr, c + dc
+                    if (0 <= nr < GRID_SIZE and 0 <= nc < GRID_SIZE and
+                        self.player_grid[nr][nc] in ("~", "S") and
+                        (nr, nc) not in queue):
+                        queue.append((nr, nc))
+        return queue
+
+    def _ship_sunk(self, row, col):
+        """True if the player ship containing (row, col) has every cell hit"""
+        for cells in self.player_fleet:
+            if (row, col) in cells:
+                return all(self.player_grid[r][c] == "X" for r, c in cells)
+        return False
+    
     def _ai_attack(self):
         """AI makes an attack"""
+        # Drop queued cells that a later shot already resolved
+        while self.ai_target_queue and self.player_grid[self.ai_target_queue[0][0]][self.ai_target_queue[0][1]] not in ("~", "S"):
+            self.ai_target_queue.pop(0)
         if self.ai_target_mode and self.ai_target_queue:
             # Smart targeting mode - attack adjacent cells after a hit
             row, col = self.ai_target_queue.pop(0)
         else:
             # Random attack
+            self.ai_target_mode = False
             available = [(r, c) for r in range(GRID_SIZE) for c in range(GRID_SIZE) 
                         if self.player_grid[r][c] == "~" or self.player_grid[r][c] == "S"]
             if not available:
@@ -479,7 +524,15 @@ class BattleshipGame:
             
             if self.ai_hits >= self.total_ship_cells:
                 self.game_phase = "ended"
-                return "💀 AI Wins! All your ships destroyed!"
+                self.message = "💀 AI Wins! All your ships destroyed!"
+                return self.message
+            
+            if self._ship_sunk(row, col):
+                # Ship destroyed: keep hunting only around other damaged, unsunk ships
+                self.ai_target_queue = self._unsunk_hit_neighbors()
+                self.ai_target_mode = bool(self.ai_target_queue)
+                self.ai_last_hit = None
+                result = f"AI sank your ship at {format_coordinate(row, col)}!"
         else:
             self.player_grid[row][col] = "O"  # Miss
             result = f"AI Missed at {format_coordinate(row, col)}"
@@ -531,8 +584,17 @@ def board_updates(game):
                     for r in range(GRID_SIZE) for c in range(GRID_SIZE)]
     return updates
 
+def placement_info(game):
+    """Hidden HTML carrying game state for the front-end (placement preview, leave-page guard)"""
+    shots = any(cell in ("X", "O") for grid in (game.player_grid, game.ai_grid) for row in grid for cell in row)
+    fleet_placed = game.mode == "classic" and game.current_ship_index > 0
+    in_progress = game.game_phase != "ended" and (shots or fleet_placed)
+    size = SHIPS[game.ship_names[game.current_ship_index]] if game.game_phase == "placement" else 0
+    return gr.update(value=(f'<div id="placement-info" data-phase="{game.game_phase}" data-size="{size}" '
+                            f'data-orient="{game.ship_orientation}" data-progress="{int(in_progress)}"></div>'))
+
 def handle_grid_click(game, row, col, is_ai_grid):
-    """Handle grid clicks for placement and attacking; returns [game, message, *board updates]"""
+    """Handle grid clicks for placement and attacking; returns [game, message, info, *board updates]"""
     if game.mode == "word":
         msg = game.select_cell(row, col) if is_ai_grid else game.message
     elif game.game_phase == "placement":
@@ -548,23 +610,16 @@ def handle_grid_click(game, row, col, is_ai_grid):
     else:
         msg = game.message
     
-    return [game, msg] + board_updates(game)
-
-def handle_cell_click(evt: gr.SelectData):
-    """Handle click events on the grids"""
-    # Determine which grid was clicked based on index
-    # Since we have 2 grids side by side, we need coordinates
-    # For now, this is handled by separate buttons for each cell
-    pass
+    return [game, msg, placement_info(game)] + board_updates(game)
 
 def orientation_toggle(game):
     """Toggle ship orientation"""
-    return [game, game.toggle_orientation()]
+    return [game, game.toggle_orientation(), placement_info(game)]
 
 def reset_game_handler(game):
     """Reset the game"""
     game.reset_game()
-    return [game, game.message] + board_updates(game)
+    return [game, game.message, placement_info(game)] + board_updates(game)
 
 def mode_view_updates(game):
     """Visibility / label / theme updates for the current mode"""
@@ -590,10 +645,10 @@ def toggle_mode_handler(game):
         for upd in board[GRID_SIZE * GRID_SIZE:]:
             upd["variant"] = "secondary"
             upd["elem_classes"] = []
-    return [game, game.message] + board + mode_view_updates(game)
+    return [game, game.message, placement_info(game)] + board + mode_view_updates(game)
 
 def clear_selection_handler(game):
-    return [game, game.clear_selection()] + board_updates(game)
+    return [game, game.clear_selection(), placement_info(game)] + board_updates(game)
 
 ARCADE_CSS = """
 /* Import retro gaming font */
@@ -1058,6 +1113,60 @@ observer.observe(document.body, {
     attributes: false
 });
 
+// ---- Placement preview: hover a cell on your grid to see where the current ship would go
+function placementInfo() {
+    return document.getElementById('placement-info');
+}
+
+function playerCell(r, c) {
+    return document.getElementById(`pcell-${r}-${c}`);
+}
+
+function clearPreview() {
+    document.querySelectorAll('.preview-ok, .preview-bad').forEach(el => {
+        el.classList.remove('preview-ok', 'preview-bad');
+    });
+}
+
+function showPreview(r, c) {
+    clearPreview();
+    const info = placementInfo();
+    if (!info || info.dataset.phase !== 'placement') return;
+    const size = parseInt(info.dataset.size, 10);
+    const horizontal = info.dataset.orient === 'horizontal';
+    const cells = [];
+    let fits = true;
+    for (let i = 0; i < size; i++) {
+        const rr = horizontal ? r : r + i;
+        const cc = horizontal ? c + i : c;
+        const btn = playerCell(rr, cc);
+        if (!btn) { fits = false; continue; }  // runs off the board
+        if (btn.textContent.includes('🚢')) fits = false;  // overlaps a placed ship
+        cells.push(btn);
+    }
+    cells.forEach(btn => btn.classList.add(fits ? 'preview-ok' : 'preview-bad'));
+}
+
+document.addEventListener('mouseover', (e) => {
+    const btn = e.target.closest('button[id^="pcell-"]');
+    if (!btn) return;
+    const [, r, c] = btn.id.split('-').map(Number);
+    showPreview(r, c);
+});
+document.addEventListener('mouseout', (e) => {
+    const btn = e.target.closest('button[id^="pcell-"]');
+    if (btn && !(e.relatedTarget && e.relatedTarget.closest('button[id^="pcell-"]'))) clearPreview();
+});
+
+// ---- Leaving the page throws the current game away (state is per session): ask first
+window.addEventListener('beforeunload', (e) => {
+    const info = placementInfo();
+    if (info && info.dataset.progress === '1') {
+        e.preventDefault();
+        e.returnValue = '';
+    }
+});
+
 console.log('✅ Game effects ready!');
 """
 
@@ -1135,27 +1244,21 @@ WORD_MODE_CSS = """
     background: #10231a !important;
     box-shadow: 0 0 8px rgba(61, 220, 132, 0.6) !important;
 }
-"""
 
-def create_interactive_grid(grid, is_ai_grid=False):
-    """Create interactive grid with buttons"""
-    buttons = []
-    for r in range(GRID_SIZE):
-        row_buttons = []
-        for c in range(GRID_SIZE):
-            cell = grid[r][c]
-            if cell == "X":
-                symbol = "💥"
-            elif cell == "O":
-                symbol = "⚪"
-            elif cell == "S" and not is_ai_grid:
-                symbol = "🚢"
-            else:
-                symbol = "🌊"
-            
-            row_buttons.append(gr.Button(symbol, size="sm", scale=1))
-        buttons.append(row_buttons)
-    return buttons
+/* Placement preview (hover on your grid during placement) */
+#placement-info-wrap {
+    display: none;
+}
+button.preview-ok {
+    background: rgba(0, 255, 0, 0.35) !important;
+    box-shadow: 0 0 14px #00ff00 !important;
+}
+button.preview-bad {
+    background: rgba(255, 60, 60, 0.45) !important;
+    border-color: #ff3c3c !important;
+    box-shadow: 0 0 14px #ff3c3c !important;
+}
+"""
 
 # Create Gradio interface
 with gr.Blocks(title="Battleship Game") as app:
@@ -1168,6 +1271,7 @@ with gr.Blocks(title="Battleship Game") as app:
     
         with gr.Row():
             message_box = gr.Textbox(label="Game Status", value=initial_game.message, interactive=False)
+        info_box = gr.HTML(placement_info(initial_game)["value"], elem_id="placement-info-wrap")
     
         with gr.Row():
             toggle_btn = gr.Button("Toggle Orientation (Horizontal/Vertical)")
@@ -1194,7 +1298,7 @@ with gr.Blocks(title="Battleship Game") as app:
                             row_btns = []
                             for c in range(GRID_SIZE):
                                 btn = gr.Button(cell_symbol(initial_game.player_grid[r][c], show_ships=True),
-                                                size="sm", scale=1, min_width=40)
+                                                size="sm", scale=1, min_width=40, elem_id=f"pcell-{r}-{c}")
                                 row_btns.append(btn)
                             player_buttons.append(row_btns)
         
@@ -1247,7 +1351,7 @@ with gr.Blocks(title="Battleship Game") as app:
     
         flat_buttons = ([player_buttons[r][c] for r in range(GRID_SIZE) for c in range(GRID_SIZE)] +
                         [ai_buttons[r][c] for r in range(GRID_SIZE) for c in range(GRID_SIZE)])
-        board_outputs = [game_state, message_box] + flat_buttons
+        board_outputs = [game_state, message_box, info_box] + flat_buttons
     
         # Wire up player grid clicks (for placement)
         for r in range(GRID_SIZE):
@@ -1270,7 +1374,7 @@ with gr.Blocks(title="Battleship Game") as app:
         toggle_btn.click(
             fn=orientation_toggle,
             inputs=[game_state],
-            outputs=[game_state, message_box]
+            outputs=[game_state, message_box, info_box]
         )
     
         reset_btn.click(

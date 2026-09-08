@@ -4,6 +4,24 @@ Single source of truth for all bugs found in this project, their fixes, and the 
 
 Each bug is documented with: Title, Reported by, Status (Open / In progress / Fixed), Description, Impact, Fix, Devin session, PR.
 
+## PR → bug map
+
+| PR | Bugs | Notes |
+| --- | --- | --- |
+| [#1](https://github.com/ak777app/battleship/pull/1) | — | Created this debugging log |
+| [#2](https://github.com/ak777app/battleship/pull/2) | 1, 2, 11 | Board merge: per-grid click routing, live buttons, reset repaint |
+| [#3](https://github.com/ak777app/battleship/pull/3) | 3 | Backtracking AI ship placement |
+| [#4](https://github.com/ak777app/battleship/pull/4) | 13 | A–J / 1–10 grid labels, `format_coordinate` |
+| [#5](https://github.com/ak777app/battleship/pull/5) | 15, 16, 17 | Word-puzzle mode and its review fixes |
+| [#6](https://github.com/ak777app/battleship/pull/6), [#7](https://github.com/ak777app/battleship/pull/7), [#8](https://github.com/ak777app/battleship/pull/8) | — | Word-mode features (bold targets, AI fire-back, spaced words) |
+| [#11](https://github.com/ak777app/battleship/pull/11) | — | Pytest suite, 100% coverage gate |
+| [#12](https://github.com/ak777app/battleship/pull/12), [#13](https://github.com/ak777app/battleship/pull/13) | — | Arcade theme, green target dots, word chime |
+| [#14](https://github.com/ak777app/battleship/pull/14) | — | Background music (closed, not merged) |
+| [#15](https://github.com/ak777app/battleship/pull/15) | — | Render deployment (`render.yaml`, `server.py`) |
+| [#16](https://github.com/ak777app/battleship/pull/16) | 4 | Per-session `gr.State` game |
+| [#17](https://github.com/ak777app/battleship/pull/17) | 5, 6, 7, 8, 9, 12, 14 | Remaining open bugs |
+| [#17](https://github.com/ak777app/battleship/pull/17) | 10 | Closed as by-design: adjacent ships allowed |
+
 ---
 
 ## Bug 1 — Shared click handler across both grids (routing bug)
@@ -43,95 +61,95 @@ Each bug is documented with: Title, Reported by, Status (Open / In progress / Fi
   - Only fails with RuntimeError for genuinely unsatisfiable GRID_SIZE/SHIPS configurations
   - Guarantees exactly 17 ship cells are always placed for standard configurations
 - **Devin session:** Databricks Assistant (Genie Code)
-- **PR:** _(to fill in when opened)_
+- **PR:** https://github.com/ak777app/battleship/pull/3
 
 ---
 
 ## Bug 4 — Global game state shared across all sessions
 
 - **Reported by:** self / analysis
-- **Status:** Open
+- **Status:** Fixed
 - **Description:** `game = BattleshipGame()` is a single module-level instance (line ~200) used directly by every handler, so all Gradio clients and browser tabs share one board, one turn, and one placement phase.
 - **Impact:** Two concurrent users (or even two tabs of the same user) corrupt each other's game: ships placed by one appear for the other, turns interleave, and resets wipe out other players' games.
 
   Update (PR #5, word-puzzle mode): the shared instance now also carries `game.mode`. When one client switches modes, `handle_grid_click` reroutes every other client's clicks to the new mode while their UI (grid visibility, labels, theme) still shows the old one. Flagged by Devin Review on PR #5; the user chose to leave the shared-state architecture as is for now.
-- **Fix (proposed):** Move game state to per-session storage (e.g. a `gr.State` holding a `BattleshipGame`, or a session-scoped instance keyed by Gradio session hash) and thread it through every handler.
-- **Devin session:** _(to fill in when the fix starts)_
-- **PR:** _(to fill in when opened)_
+- **Fix:** The module-level `game` was removed. `gr.State(BattleshipGame)` (callable, so Gradio builds a fresh, independently randomised game per browser session) is threaded through every handler: each takes the game as its first input and returns it as its first output (`[game, message, *board updates]`). Verified with two browser contexts against the Render deployment. Public deployment context: bug surfaced by Devin Review on PR #15 (Render blueprint).
+- **Devin session:** https://app.devin.ai/sessions/a110ddb7b140405a8e64afe462dc7831
+- **PR:** https://github.com/ak777app/battleship/pull/16
 
 ---
 
 ## Bug 5 — AI target-queue cells popped without re-validation
 
 - **Reported by:** self / analysis
-- **Status:** Open
+- **Status:** Fixed
 - **Description:** In smart-targeting mode `_ai_attack` pops a cell from `ai_target_queue` (line ~158) and acts on it immediately, without re-checking that the cell is still `~` or `S`. Cells are only validated at insertion time (lines ~177-182), so a cell queued earlier may already have been resolved by a later attack.
 - **Impact:** The AI can "attack" an already-hit or already-missed cell, overwriting the mark and potentially double-counting a hit (`ai_hits += 1` on a cell already marked `X`), which can end the game early or produce misleading board state.
-- **Fix (proposed):** Re-validate popped cells against the current `player_grid`; skip resolved cells in a loop and fall back to a random attack when the queue drains.
-- **Devin session:** _(to fill in when the fix starts)_
-- **PR:** _(to fill in when opened)_
+- **Fix:** `_ai_attack` first drains any leading queue entries whose `player_grid` cell is no longer `~`/`S`; if the queue empties it clears `ai_target_mode` and falls back to a random shot, so a cell is never attacked twice and `ai_hits` cannot be double-counted.
+- **Devin session:** https://app.devin.ai/sessions/a110ddb7b140405a8e64afe462dc7831
+- **PR:** https://github.com/ak777app/battleship/pull/17
 
 ---
 
 ## Bug 6 — `turn` reset unconditionally even after the game ends
 
 - **Reported by:** self / analysis
-- **Status:** Open
+- **Status:** Fixed
 - **Description:** After the AI moves, `player_attack` always sets `self.turn = "player"` (line ~150), even when `_ai_attack` has just set `game_phase = "ended"` because the AI won.
 - **Impact:** Turn state is inconsistent with the ended phase, which makes any turn-based guard unreliable and can mislead future logic that checks `turn` rather than `game_phase`.
-- **Fix (proposed):** Only set `turn = "player"` when `game_phase != "ended"`.
-- **Devin session:** _(to fill in when the fix starts)_
-- **PR:** _(to fill in when opened)_
+- **Fix:** `player_attack` returns straight after `_ai_attack` when the AI ended the game, leaving `turn == "ai"`; `turn = "player"` only runs when the game continues.
+- **Devin session:** https://app.devin.ai/sessions/a110ddb7b140405a8e64afe462dc7831
+- **PR:** https://github.com/ak777app/battleship/pull/17
 
 ---
 
 ## Bug 7 — AI targeting never resets when a ship is sunk
 
 - **Reported by:** self / analysis
-- **Status:** Open
+- **Status:** Fixed
 - **Description:** The game tracks only a total hit count and never per-ship sinking. After the AI destroys a ship, `ai_target_mode` stays True and stale adjacent cells from that ship remain in `ai_target_queue` (lines ~172-182). The mode is only cleared when the queue happens to empty on a miss (lines ~193-195).
 - **Impact:** The AI wastes turns hunting around an already-sunk ship instead of resuming its search, and the "smart targeting" heuristic behaves incoherently — a subtle difficulty/quality bug.
-- **Fix (proposed):** Track ship identity per cell so sinking can be detected; when a ship is fully destroyed, clear the target queue and `ai_target_mode` (or re-anchor the queue to remaining unresolved hits).
-- **Devin session:** _(to fill in when the fix starts)_
-- **PR:** _(to fill in when opened)_
+- **Fix:** Ship identity is now recorded in `player_fleet` (a list of cell lists) by both `place_ship` and `_place_spread_fleet`. New `_ship_sunk(row, col)` checks whether every cell of the ship containing the hit is `X`; when it is, `_ai_attack` rebuilds `ai_target_queue` from `_unsunk_hit_neighbors()` (cells next to hits on other, still-unsunk ships — matters when ships touch), clears `ai_last_hit`, drops target mode if nothing is left, and reports "AI sank your ship at …".
+- **Devin session:** https://app.devin.ai/sessions/a110ddb7b140405a8e64afe462dc7831
+- **PR:** https://github.com/ak777app/battleship/pull/17
 
 ---
 
 ## Bug 8 — "Ended" phase clicks overwrite the win/loss message
 
 - **Reported by:** self / analysis
-- **Status:** Open
+- **Status:** Fixed
 - **Description:** `player_attack` returns the win string but never assigns it to `self.message` (lines ~140-142); `_ai_attack` does the same for the AI win (lines ~186-188). After the game ends, further clicks fall into the `else` branch of `handle_grid_click` and return the stale `game.message` (lines ~245-246).
 - **Impact:** The victory/defeat banner disappears as soon as the player clicks anywhere, replaced by an outdated status line — the player may not know the game is over.
-- **Fix (proposed):** Assign the win/loss text to `self.message` so it persists, and ignore (or re-show the end message on) post-game clicks.
-- **Devin session:** _(to fill in when the fix starts)_
-- **PR:** _(to fill in when opened)_
+- **Fix:** `player_attack` and `_ai_attack` assign the win/loss banner to `self.message` (and `player_attack` also stores the regular "Hit/Miss + AI reply" text), so post-game clicks — which fall through to `game.message` in `handle_grid_click` — keep showing the final result.
+- **Devin session:** https://app.devin.ai/sessions/a110ddb7b140405a8e64afe462dc7831
+- **PR:** https://github.com/ak777app/battleship/pull/17
 
 ---
 
 ## Bug 9 — Orientation toggle has no visual preview and no fit validation
 
 - **Reported by:** self / analysis
-- **Status:** Open
+- **Status:** Fixed
 - **Description:** `toggle_orientation` (lines ~115-121) only flips a string and returns a message; its wiring outputs to `message_box` only (lines ~360-363). Nothing checks whether the current ship can fit in the new orientation until a placement attempt fails (lines ~91-92), and nothing previews where the ship would go.
 
   Clarification (confirmed): `toggle_orientation` does **not** corrupt state or crash. The potential `IndexError` on `self.ship_names[self.current_ship_index]` is prevented because the method is gated behind `game_phase == "placement"`, so `current_ship_index` is always 0-4; and `place_ship` re-validates via `_can_place_ship`, so a bad orientation only yields an error message with no grid writes. Separately, the toggle message overwrites any prior status text in the message box.
 - **Impact:** Placement is trial-and-error: the player cannot see the ship footprint before clicking and only learns a position is invalid after a failed attempt, and the toggle wipes the previous status message.
-- **Fix (proposed):** Preview the prospective placement (e.g. hover/selected-cell highlight) and/or warn in the status text when the current ship cannot fit anywhere in the chosen orientation; preserve relevant prior status information.
-- **Devin session:** _(to fill in when the fix starts)_
-- **PR:** _(to fill in when opened)_
+- **Fix:** (a) Hover preview: player-grid buttons carry `elem_id="pcell-r-c"`, and a hidden `#placement-info` HTML element (emitted by `placement_info(game)` on every handler) exposes `data-phase/size/orient`. `GAME_JS` highlights the cells the current ship would occupy on hover — green (`preview-ok`) when it fits, red (`preview-bad`) when it runs off the board or overlaps a ship. (b) `toggle_orientation` now stores its text in `self.message` and appends a warning when `_fits_anywhere` finds no free spot for the current ship in the new orientation. (c) `place_ship` failures say why: "…: it would run off the board." / "…: it overlaps another ship.".
+- **Devin session:** https://app.devin.ai/sessions/a110ddb7b140405a8e64afe462dc7831
+- **PR:** https://github.com/ak777app/battleship/pull/17
 
 ---
 
 ## Bug 10 — Ships can be placed directly adjacent
 
 - **Reported by:** self / analysis
-- **Status:** Open
+- **Status:** Closed — by design (owner decision, 2026-09-08: adjacent ships are allowed in Classic mode)
 - **Description:** `_can_place_ship` (lines ~67-81) only checks bounds and cell emptiness; there is no one-cell buffer between ships, so ships may touch side by side or end to end (for both player and AI placement).
 - **Impact:** Depends on the intended rules variant. Under classic tournament rules ships may not touch; touching ships also weaken the AI's adjacency heuristic and can make two ships read as one.
-- **Fix (proposed):** Confirm the intended rules variant with the user; optionally enforce a no-touching rule by rejecting placements with an occupied cell in the 8-neighbourhood of any ship cell.
-- **Devin session:** _(to fill in when the fix starts)_
-- **PR:** _(to fill in when opened)_
+- **Fix (proposed):** Confirm the intended rules variant with the user; optionally enforce a no-touching rule by rejecting placements with an occupied cell in the 8-neighbourhood of any ship cell. `_can_place_ship(..., isolated=True)` and `_isolated` already implement that rule (used for word-mode targets and the auto-placed player fleet), so enforcing it for classic mode is a one-flag change in `place_ship` and `_backtrack_place_ships`. Owner decided to keep the touching-ships variant, so no change is made; the isolated rule remains word-mode/auto-placement only.
+- **Devin session:** https://app.devin.ai/sessions/a110ddb7b140405a8e64afe462dc7831 (decision recorded)
+- **PR:** https://github.com/ak777app/battleship/pull/17 (status update only, no code change)
 
 ---
 
@@ -150,12 +168,12 @@ Each bug is documented with: Title, Reported by, Status (Open / In progress / Fi
 ## Bug 12 — Dead / unused code
 
 - **Reported by:** self / analysis
-- **Status:** Open
+- **Status:** Fixed
 - **Description:** `handle_cell_click` is an empty stub (lines ~253-258), `create_interactive_grid` is defined but never called (lines ~272-290), and the `clickable` parameter of `create_grid_display` (line ~202) is never used. (`create_grid_display` and its unused `clickable` parameter were already deleted by the bug #1/#2 board merge; `handle_cell_click` and `create_interactive_grid` remain.)
 - **Impact:** Dead code misleads readers about how input is handled and adds maintenance noise.
-- **Fix (proposed):** Remove the stub, the unused factory, and the unused parameter during the board-merge refactor (bugs #1/#2).
-- **Devin session:** _(to fill in when the fix starts)_
-- **PR:** _(to fill in when opened)_
+- **Fix:** `handle_cell_click` and `create_interactive_grid` (and their tests) are deleted; `create_grid_display`/`clickable` had already gone with PR #2.
+- **Devin session:** https://app.devin.ai/sessions/a110ddb7b140405a8e64afe462dc7831
+- **PR:** https://github.com/ak777app/battleship/pull/17
 
 ---
 
@@ -172,20 +190,20 @@ Each bug is documented with: Title, Reported by, Status (Open / In progress / Fi
   - Updated all coordinate messages (hit/miss) in `player_attack` and `_ai_attack` to use standard notation
   - Internal `grid[r][c]` indexing remains 0-based for code clarity
 - **Devin session:** Databricks Assistant (Genie Code)
-- **PR:** _(to fill in when opened)_
+- **PR:** https://github.com/ak777app/battleship/pull/4
 
 ---
 
 ## Bug 14 — Game state lost / silently desynced on page refresh
 
 - **Reported by:** self / analysis
-- **Status:** Open
+- **Status:** Fixed
 - **Description:** State lives in the module-level singleton `game = BattleshipGame()`, and the widget initial values are computed once at module load (message box line ~298, HTML panels lines ~307/~322). On refresh the server keeps the game but the page re-renders the initial empty board, so the UI desyncs from the real state. If bug #4 is fixed to per-session state, a refresh instead loses the game entirely.
 - **Impact:** An accidental refresh either shows a board that is wrong or throws away the game in progress, with no warning.
-- **Fix (tier a, approved):** Inject a `beforeunload` confirmation popup via the `js=` parameter of `gr.Blocks` (line ~293), falling back to `head=` with an inline `<script>` if the pinned Gradio version does not support `js=` (check `app.yaml` / requirements).
-- **Fix (tier b, Open follow-up):** Full persistence via localStorage or a server-side session store, coordinated with bug #4.
-- **Devin session:** _(to fill in when the fix starts)_
-- **PR:** _(to fill in when opened)_
+- **Fix (tier a):** `GAME_JS` (already injected via `head=`) registers a `beforeunload` handler that shows the browser's leave-page confirmation whenever `#placement-info` reports `data-progress="1"` (ships placed or shots fired, game not ended). With per-session state (bug #4) a refresh now consistently starts a fresh game instead of desyncing, and the prompt prevents doing so by accident.
+- **Fix (tier b, Open follow-up, not started):** Full persistence via localStorage or a server-side session store, coordinated with bug #4.
+- **Devin session:** https://app.devin.ai/sessions/a110ddb7b140405a8e64afe462dc7831
+- **PR:** https://github.com/ak777app/battleship/pull/17
 
 ---
 
