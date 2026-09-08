@@ -819,38 +819,35 @@ def test_place_spread_fleet_prefers_edges(word):
     assert edge_cells >= 9  # carrier + battleship both hug an edge
 
 
-# --------------------------------------------------------------------------- handlers (global game)
+# --------------------------------------------------------------------------- handlers (per-session game)
 
 @pytest.fixture
-def global_classic(monkeypatch):
-    g = BattleshipGame()
-    monkeypatch.setattr(app, "game", g)
-    return g
+def global_classic():
+    return BattleshipGame()
 
 
 @pytest.fixture
-def global_word(monkeypatch):
+def global_word():
     g = BattleshipGame()
     g.toggle_mode()
     controlled_word_game(g)
-    monkeypatch.setattr(app, "game", g)
     return g
 
 
 def test_word_cell_update(global_word):
-    upd = word_cell_update(9, 9)
+    upd = word_cell_update(global_word, 9, 9)
     assert upd["value"] == "Z"
     assert upd["variant"] == "secondary"
     assert upd["elem_classes"] == ["word-cell"]
-    upd = word_cell_update(0, 0)
+    upd = word_cell_update(global_word, 0, 0)
     assert upd["value"] == "F"
     assert upd["elem_classes"] == ["word-cell", "target-cell"]
     global_word.selected_cells = [(0, 0)]
-    upd = word_cell_update(0, 0)
+    upd = word_cell_update(global_word, 0, 0)
     assert upd["variant"] == "primary"
     assert upd["elem_classes"] == ["word-cell", "target-cell", "selected-cell"]
     global_word.target_words[0]["solved"] = True
-    upd = word_cell_update(0, 0)
+    upd = word_cell_update(global_word, 0, 0)
     assert upd["variant"] == "secondary"
     assert upd["elem_classes"] == ["word-cell", "target-cell", "solved-cell"]
 
@@ -859,7 +856,7 @@ def test_board_updates_classic(global_classic):
     global_classic.player_grid[0][0] = "S"
     global_classic.ai_grid[1][1] = "X"
     global_classic.ai_ships[2][2] = "S"
-    updates = board_updates()
+    updates = board_updates(global_classic)
     assert len(updates) == 2 * CELLS
     assert updates[0]["value"] == "🚢"
     assert updates[CELLS + 11]["value"] == "💥"
@@ -868,7 +865,7 @@ def test_board_updates_classic(global_classic):
 
 
 def test_board_updates_word(global_word):
-    updates = board_updates()
+    updates = board_updates(global_word)
     assert len(updates) == 2 * CELLS
     assert updates[CELLS]["value"] == "F"
     assert "word-cell" in updates[CELLS]["elem_classes"]
@@ -876,42 +873,42 @@ def test_board_updates_word(global_word):
 
 
 def test_handle_grid_click_word_mode(global_word, quiet_ai):
-    result = handle_grid_click(0, 0, is_ai_grid=True)
-    assert len(result) == 1 + 2 * CELLS
-    assert result[0].startswith("Selected: F (1 letters).")
+    result = handle_grid_click(global_word, 0, 0, is_ai_grid=True)
+    assert len(result) == 2 + 2 * CELLS
+    assert result[1].startswith("Selected: F (1 letters).")
     assert global_word.selected_cells == [(0, 0)]
-    assert result[1 + CELLS]["variant"] == "primary"
+    assert result[2 + CELLS]["variant"] == "primary"
     # own grid is inert in word mode
-    result = handle_grid_click(5, 5, is_ai_grid=False)
-    assert result[0] == global_word.message
+    result = handle_grid_click(global_word, 5, 5, is_ai_grid=False)
+    assert result[1] == global_word.message
     assert global_word.selected_cells == [(0, 0)]
 
 
 def test_handle_grid_click_placement(global_classic):
-    result = handle_grid_click(0, 0, is_ai_grid=True)
-    assert result[0] == "Place your ships on your own grid (left)!"
+    result = handle_grid_click(global_classic, 0, 0, is_ai_grid=True)
+    assert result[1] == "Place your ships on your own grid (left)!"
     assert global_classic.current_ship_index == 0
-    result = handle_grid_click(0, 0, is_ai_grid=False)
-    assert result[0] == "Place your Battleship (4 cells)"
-    assert len(result) == 1 + 2 * CELLS
-    assert [u["value"] for u in result[1:6]] == ["🚢"] * 5
+    result = handle_grid_click(global_classic, 0, 0, is_ai_grid=False)
+    assert result[1] == "Place your Battleship (4 cells)"
+    assert len(result) == 2 + 2 * CELLS
+    assert [u["value"] for u in result[2:7]] == ["🚢"] * 5
 
 
 def test_handle_grid_click_playing(global_classic, quiet_ai):
     global_classic.game_phase = "playing"
     global_classic.ai_ships = empty_grid()
-    result = handle_grid_click(3, 3, is_ai_grid=False)
-    assert result[0] == "Fire at the AI grid (right)!"
+    result = handle_grid_click(global_classic, 3, 3, is_ai_grid=False)
+    assert result[1] == "Fire at the AI grid (right)!"
     assert global_classic.ai_grid[3][3] == "~"
-    result = handle_grid_click(3, 3, is_ai_grid=True)
-    assert result[0] == "Miss at D4\nAI Missed at J10"
-    assert result[1 + CELLS + 33]["value"] == "⚪"
+    result = handle_grid_click(global_classic, 3, 3, is_ai_grid=True)
+    assert result[1] == "Miss at D4\nAI Missed at J10"
+    assert result[2 + CELLS + 33]["value"] == "⚪"
 
 
 def test_handle_grid_click_ended(global_classic):
     global_classic.game_phase = "ended"
     global_classic.message = "over"
-    assert handle_grid_click(0, 0, is_ai_grid=True)[0] == "over"
+    assert handle_grid_click(global_classic, 0, 0, is_ai_grid=True)[1] == "over"
 
 
 def test_handle_cell_click_is_noop():
@@ -919,21 +916,21 @@ def test_handle_cell_click_is_noop():
 
 
 def test_orientation_toggle(global_classic):
-    assert orientation_toggle() == "Orientation: vertical. Place Carrier (5 cells)"
+    assert orientation_toggle(global_classic) == [global_classic, "Orientation: vertical. Place Carrier (5 cells)"]
     assert global_classic.ship_orientation == "vertical"
 
 
 def test_reset_game_handler(global_classic):
     global_classic.place_ship(0, 0)
-    result = reset_game_handler()
-    assert len(result) == 1 + 2 * CELLS
-    assert result[0] == "Place your Carrier (5 cells)"
+    result = reset_game_handler(global_classic)
+    assert len(result) == 2 + 2 * CELLS
+    assert result[1] == "Place your Carrier (5 cells)"
     assert global_classic.current_ship_index == 0
-    assert all(u["value"] == "🌊" for u in result[1:])
+    assert all(u["value"] == "🌊" for u in result[2:])
 
 
 def test_mode_view_updates(global_classic):
-    upd = mode_view_updates()
+    upd = mode_view_updates(global_classic)
     assert len(upd) == 6
     assert upd[0]["value"] == "### Your Grid"
     assert upd[1]["visible"] is True
@@ -942,7 +939,7 @@ def test_mode_view_updates(global_classic):
     assert upd[4]["value"] == "Switch to Word Puzzle Mode"
     assert upd[5]["elem_classes"] == []
     global_classic.mode = "word"
-    upd = mode_view_updates()
+    upd = mode_view_updates(global_classic)
     assert upd[0]["value"].startswith("### Your Fleet")
     assert upd[1]["visible"] is False
     assert upd[2]["visible"] is True
@@ -952,21 +949,21 @@ def test_mode_view_updates(global_classic):
 
 
 def test_toggle_mode_handler_to_word(global_classic):
-    result = toggle_mode_handler()
+    result = toggle_mode_handler(global_classic)
     assert global_classic.mode == "word"
-    assert len(result) == 1 + 2 * CELLS + 6
-    assert "Solved 0/5" in result[0]
-    ai_updates = result[1 + CELLS:1 + 2 * CELLS]
+    assert len(result) == 2 + 2 * CELLS + 6
+    assert "Solved 0/5" in result[1]
+    ai_updates = result[2 + CELLS:1 + 2 * CELLS]
     assert all("word-cell" in u["elem_classes"] for u in ai_updates)
     assert result[-1]["elem_classes"] == ["word-mode"]
 
 
 def test_toggle_mode_handler_back_to_classic_strips_styling(global_word):
-    result = toggle_mode_handler()
+    result = toggle_mode_handler(global_word)
     assert global_word.mode == "classic"
-    assert len(result) == 1 + 2 * CELLS + 6
-    assert result[0] == "Place your Carrier (5 cells)"
-    ai_updates = result[1 + CELLS:1 + 2 * CELLS]
+    assert len(result) == 2 + 2 * CELLS + 6
+    assert result[1] == "Place your Carrier (5 cells)"
+    ai_updates = result[2 + CELLS:1 + 2 * CELLS]
     assert all(u["variant"] == "secondary" and u["elem_classes"] == [] for u in ai_updates)
     assert all(u["value"] == "🌊" for u in ai_updates)
     assert result[-1]["elem_classes"] == []
@@ -974,11 +971,29 @@ def test_toggle_mode_handler_back_to_classic_strips_styling(global_word):
 
 def test_clear_selection_handler(global_word):
     global_word.selected_cells = [(0, 0)]
-    result = app.clear_selection_handler()
-    assert result[0] == "Selection cleared. Solved 0/2"
+    result = app.clear_selection_handler(global_word)
+    assert result[1] == "Selection cleared. Solved 0/2"
     assert global_word.selected_cells == []
-    assert len(result) == 1 + 2 * CELLS
-    assert all(u["variant"] == "secondary" for u in result[1 + CELLS:])
+    assert len(result) == 2 + 2 * CELLS
+    assert all(u["variant"] == "secondary" for u in result[2 + CELLS:])
+
+
+def test_handlers_return_game_as_state(global_classic):
+    assert handle_grid_click(global_classic, 0, 0, is_ai_grid=False)[0] is global_classic
+    assert reset_game_handler(global_classic)[0] is global_classic
+    assert toggle_mode_handler(global_classic)[0] is global_classic
+    assert app.clear_selection_handler(global_classic)[0] is global_classic
+
+
+def test_sessions_do_not_share_state(quiet_ai):
+    """Two independent games (one per browser session) never see each other's moves"""
+    a, b = BattleshipGame(), BattleshipGame()
+    handle_grid_click(a, 0, 0, is_ai_grid=False)
+    assert a.current_ship_index == 1
+    assert b.current_ship_index == 0
+    assert all(cell == "~" for row in b.player_grid for cell in row)
+    toggle_mode_handler(b)
+    assert b.mode == "word" and a.mode == "classic"
 
 
 def test_create_interactive_grid():
