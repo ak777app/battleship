@@ -20,7 +20,7 @@ Each bug is documented with: Title, Reported by, Status (Open / In progress / Fi
 | [#15](https://github.com/ak777app/battleship/pull/15) | — | Render deployment (`render.yaml`, `server.py`) |
 | [#16](https://github.com/ak777app/battleship/pull/16) | 4 | Per-session `gr.State` game |
 | [#17](https://github.com/ak777app/battleship/pull/17) | 5, 6, 7, 8, 9, 12, 14 | Remaining open bugs |
-| _(pending)_ | 10 | Needs rules-variant decision (touching ships) |
+| [#17](https://github.com/ak777app/battleship/pull/17) | 10 | Closed as by-design: adjacent ships allowed |
 
 ---
 
@@ -144,12 +144,12 @@ Each bug is documented with: Title, Reported by, Status (Open / In progress / Fi
 ## Bug 10 — Ships can be placed directly adjacent
 
 - **Reported by:** self / analysis
-- **Status:** Open — awaiting rules decision (see fix)
+- **Status:** Closed — by design (owner decision, 2026-09-08: adjacent ships are allowed in Classic mode)
 - **Description:** `_can_place_ship` (lines ~67-81) only checks bounds and cell emptiness; there is no one-cell buffer between ships, so ships may touch side by side or end to end (for both player and AI placement).
 - **Impact:** Depends on the intended rules variant. Under classic tournament rules ships may not touch; touching ships also weaken the AI's adjacency heuristic and can make two ships read as one.
-- **Fix (proposed):** Confirm the intended rules variant with the user; optionally enforce a no-touching rule by rejecting placements with an occupied cell in the 8-neighbourhood of any ship cell. `_can_place_ship(..., isolated=True)` and `_isolated` already implement that rule (used for word-mode targets and the auto-placed player fleet), so enforcing it for classic mode is a one-flag change in `place_ship` and `_backtrack_place_ships`. Raised with the owner in the session below.
-- **Devin session:** https://app.devin.ai/sessions/a110ddb7b140405a8e64afe462dc7831 (decision requested)
-- **PR:** _(to fill in when opened)_
+- **Fix (proposed):** Confirm the intended rules variant with the user; optionally enforce a no-touching rule by rejecting placements with an occupied cell in the 8-neighbourhood of any ship cell. `_can_place_ship(..., isolated=True)` and `_isolated` already implement that rule (used for word-mode targets and the auto-placed player fleet), so enforcing it for classic mode is a one-flag change in `place_ship` and `_backtrack_place_ships`. Owner decided to keep the touching-ships variant, so no change is made; the isolated rule remains word-mode/auto-placement only.
+- **Devin session:** https://app.devin.ai/sessions/a110ddb7b140405a8e64afe462dc7831 (decision recorded)
+- **PR:** https://github.com/ak777app/battleship/pull/17 (status update only, no code change)
 
 ---
 
