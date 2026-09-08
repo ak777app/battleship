@@ -816,6 +816,118 @@ function initAudio() {
 document.addEventListener('click', initAudio);
 document.addEventListener('keydown', initAudio);
 
+// ---- Background music: original upbeat 8-bit platformer-style chiptune loop ----
+// Note names -> Hz
+const NOTE_HZ = {
+    C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23, G4: 392.00, A4: 440.00, B4: 493.88,
+    C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99, A5: 880.00,
+    C3: 130.81, D3: 146.83, E3: 164.81, F3: 174.61, G3: 196.00, A3: 220.00, B3: 246.94,
+    R: 0
+};
+const BGM_BPM = 168;
+const BEAT = 60 / BGM_BPM;
+// [note, length in beats]
+const BGM_LEAD = [
+    ['C5', .5], ['D5', .5], ['E5', .5], ['G5', .5], ['E5', .5], ['D5', .5], ['C5', 1],
+    ['A4', .5], ['C5', .5], ['E5', 1], ['D5', .5], ['B4', .5], ['G4', 1],
+    ['C5', .75], ['R', .25], ['G4', .75], ['R', .25], ['E4', 1.5],
+    ['A4', .5], ['B4', .5], ['R', .5], ['A4', .5], ['G4', .5], ['E5', .5], ['G5', .5], ['A5', .5],
+    ['F5', .5], ['G5', .5], ['R', .5], ['E5', .5], ['C5', .5], ['D5', .5], ['B4', 1],
+    ['D5', .5], ['E5', .5], ['F5', .5], ['D5', .5], ['E5', .5], ['C5', .5], ['A4', .5], ['G4', .5],
+    ['C5', 1], ['R', 1], ['G4', .5], ['A4', .5], ['B4', .5], ['C5', .5],
+    ['D5', 1], ['G5', 1], ['E5', 1], ['C5', 1]
+];
+const BGM_BASS = [
+    ['C3', 1], ['G3', 1], ['C3', 1], ['G3', 1],
+    ['C3', 1], ['G3', 1], ['C3', 1], ['G3', 1],
+    ['F3', 1], ['C3', 1], ['F3', 1], ['C3', 1],
+    ['F3', 1], ['C3', 1], ['F3', 1], ['C3', 1],
+    ['G3', 1], ['D3', 1], ['G3', 1], ['D3', 1],
+    ['A3', 1], ['E3', 1], ['F3', 1], ['G3', 1],
+    ['C3', 1], ['G3', 1], ['A3', 1], ['B3', 1],
+    ['G3', 1], ['G3', 1], ['C3', 1], ['C3', 1]
+];
+
+let bgmOn = false;
+let bgmGain = null;
+let bgmTimer = null;
+let bgmNextLoopAt = 0;
+
+function scheduleTrack(track, type, volume, startAt) {
+    let t = startAt;
+    for (const [name, beats] of track) {
+        const hz = NOTE_HZ[name];
+        const dur = beats * BEAT;
+        if (hz) {
+            const osc = audioContext.createOscillator();
+            const env = audioContext.createGain();
+            osc.type = type;
+            osc.frequency.value = hz;
+            env.gain.setValueAtTime(0.0001, t);
+            env.gain.exponentialRampToValueAtTime(volume, t + 0.01);
+            env.gain.setValueAtTime(volume, t + dur * 0.7);
+            env.gain.exponentialRampToValueAtTime(0.0001, t + dur * 0.95);
+            osc.connect(env);
+            env.connect(bgmGain);
+            osc.start(t);
+            osc.stop(t + dur);
+        }
+        t += dur;
+    }
+    return t;
+}
+
+function scheduleBgmLoop() {
+    if (!bgmOn || !audioContext) return;
+    const start = Math.max(bgmNextLoopAt, audioContext.currentTime + 0.05);
+    scheduleTrack(BGM_LEAD, 'square', 0.08, start);
+    const end = scheduleTrack(BGM_BASS, 'triangle', 0.16, start);
+    bgmNextLoopAt = end;
+    // Schedule the next pass shortly before this one finishes
+    bgmTimer = setTimeout(scheduleBgmLoop, Math.max(0, (end - audioContext.currentTime - 0.5) * 1000));
+}
+
+function startBgm() {
+    initAudio();
+    if (!audioContext) return;
+    if (audioContext.state === 'suspended') audioContext.resume();
+    bgmGain = audioContext.createGain();
+    bgmGain.gain.value = 1;
+    bgmGain.connect(audioContext.destination);
+    bgmOn = true;
+    bgmNextLoopAt = 0;
+    scheduleBgmLoop();
+    console.log('🎵 BGM started');
+}
+
+function stopBgm() {
+    bgmOn = false;
+    clearTimeout(bgmTimer);
+    if (bgmGain) {
+        // Fade out then disconnect; scheduled oscillators die with the gain node
+        bgmGain.gain.setTargetAtTime(0.0001, audioContext.currentTime, 0.05);
+        const g = bgmGain;
+        setTimeout(() => g.disconnect(), 300);
+        bgmGain = null;
+    }
+    console.log('🔇 BGM stopped');
+}
+
+function updateBgmButton() {
+    const btn = document.getElementById('bgm-btn');
+    if (btn) btn.textContent = bgmOn ? '🔊 Music: ON' : '🔇 Music: OFF';
+}
+
+function toggleBgm() {
+    if (bgmOn) stopBgm(); else startBgm();
+    updateBgmButton();
+}
+
+// The BGM button has no server handler; it is purely client-side
+document.addEventListener('click', (e) => {
+    if (e.target.closest && e.target.closest('#bgm-btn')) toggleBgm();
+});
+
 function playHitSound() {
     initAudio();
     if (!audioContext) return;
@@ -1175,6 +1287,7 @@ with gr.Blocks(title="Battleship Game") as app:
             reset_btn = gr.Button("Reset Game")
             mode_btn = gr.Button("Switch to Word Puzzle Mode")
             clear_btn = gr.Button("Clear Selection", visible=False)
+            gr.Button("🔇 Music: OFF", elem_id="bgm-btn")
     
         with gr.Row():
             with gr.Column():
@@ -1228,6 +1341,8 @@ with gr.Blocks(title="Battleship Game") as app:
         3. **Ships**: Carrier (5), Battleship (4), Cruiser (3), Submarine (3), Destroyer (2)
     
         **Legend**: 🌊 Water | 🚢 Ship | 💥 Hit | ⚪ Miss
+
+        **Music**: press the **Music** button to toggle the 8-bit background loop (browsers only allow audio after a click).
     
         ### Word Puzzle Mode:
         Press **Switch to Word Puzzle Mode** for a 10x10 grid of letters on the right. Five hidden words
