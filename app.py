@@ -816,17 +816,16 @@ function initAudio() {
 document.addEventListener('click', initAudio);
 document.addEventListener('keydown', initAudio);
 
-// ---- Background music: original upbeat 8-bit platformer-style chiptune loop ----
+// ---- Background music: original synthesized loops (Web Audio, no assets) ----
 // Note names -> Hz
 const NOTE_HZ = {
-    C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23, G4: 392.00, A4: 440.00, B4: 493.88,
+    C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23, G4: 392.00, A4: 440.00, Bb4: 466.16, B4: 493.88,
     C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99, A5: 880.00,
-    C3: 130.81, D3: 146.83, E3: 164.81, F3: 174.61, G3: 196.00, A3: 220.00, B3: 246.94,
+    C3: 130.81, D3: 146.83, E3: 164.81, F3: 174.61, G3: 196.00, A3: 220.00, Bb3: 233.08, B3: 246.94,
+    D2: 73.42, F2: 87.31, G2: 98.00, A2: 110.00,
     R: 0
 };
-const BGM_BPM = 168;
-const BEAT = 60 / BGM_BPM;
-// [note, length in beats]
+// Arcade: upbeat 8-bit platformer-style chiptune. [note, length in beats]
 const BGM_LEAD = [
     ['C5', .5], ['D5', .5], ['E5', .5], ['G5', .5], ['E5', .5], ['D5', .5], ['C5', 1],
     ['A4', .5], ['C5', .5], ['E5', 1], ['D5', .5], ['B4', .5], ['G4', 1],
@@ -847,24 +846,53 @@ const BGM_BASS = [
     ['C3', 1], ['G3', 1], ['A3', 1], ['B3', 1],
     ['G3', 1], ['G3', 1], ['C3', 1], ['C3', 1]
 ];
+// Fantasy: slow modal (D minor / dorian) melody over a low drone, epic-quest feel
+const FANTASY_LEAD = [
+    ['D4', 2], ['F4', 1], ['G4', 1], ['A4', 2], ['G4', 1], ['F4', 1],
+    ['E4', 2], ['D4', 2], ['C4', 1], ['D4', 1], ['F4', 2],
+    ['A4', 2], ['C5', 1], ['D5', 1], ['A4', 2], ['G4', 1], ['F4', 1],
+    ['E4', 2], ['F4', 1], ['E4', 1], ['D4', 4]
+];
+const FANTASY_PAD = [
+    ['A3', 4], ['A3', 4], ['A3', 4], ['A3', 4],
+    ['C4', 4], ['Bb3', 4], ['A3', 4], ['A3', 4]
+];
+const FANTASY_BASS = [
+    ['D2', 4], ['D2', 4], ['F2', 4], ['D2', 4],
+    ['A2', 4], ['G2', 4], ['F2', 4], ['D2', 4]
+];
+
+// Each voice: [notes, oscillator type, volume, attack seconds]
+const BGM_TRACKS = {
+    arcade: {
+        label: 'Arcade', bpm: 168,
+        voices: [[BGM_LEAD, 'square', 0.08, 0.01], [BGM_BASS, 'triangle', 0.16, 0.01]]
+    },
+    fantasy: {
+        label: 'Fantasy', bpm: 72,
+        voices: [[FANTASY_LEAD, 'triangle', 0.14, 0.15], [FANTASY_PAD, 'sine', 0.10, 0.4], [FANTASY_BASS, 'sawtooth', 0.07, 0.3]]
+    }
+};
+const BGM_TRACK_ORDER = ['arcade', 'fantasy'];
+let bgmTrack = 'arcade';
 
 let bgmOn = false;
 let bgmGain = null;
 let bgmTimer = null;
 let bgmNextLoopAt = 0;
 
-function scheduleTrack(track, type, volume, startAt) {
+function scheduleTrack(track, type, volume, attack, beat, startAt) {
     let t = startAt;
     for (const [name, beats] of track) {
         const hz = NOTE_HZ[name];
-        const dur = beats * BEAT;
+        const dur = beats * beat;
         if (hz) {
             const osc = audioContext.createOscillator();
             const env = audioContext.createGain();
             osc.type = type;
             osc.frequency.value = hz;
             env.gain.setValueAtTime(0.0001, t);
-            env.gain.exponentialRampToValueAtTime(volume, t + 0.01);
+            env.gain.exponentialRampToValueAtTime(volume, t + Math.min(attack, dur * 0.5));
             env.gain.setValueAtTime(volume, t + dur * 0.7);
             env.gain.exponentialRampToValueAtTime(0.0001, t + dur * 0.95);
             osc.connect(env);
@@ -884,9 +912,14 @@ function scheduleBgmLoop() {
     if (!bgmOn || !audioContext) return;
     const now = audioContext.currentTime;
     if (bgmNextLoopAt < now) bgmNextLoopAt = now + 0.05;
+    const track = BGM_TRACKS[bgmTrack];
+    const beat = 60 / track.bpm;
     while (bgmNextLoopAt < now + BGM_LOOKAHEAD_SEC) {
-        scheduleTrack(BGM_LEAD, 'square', 0.08, bgmNextLoopAt);
-        bgmNextLoopAt = scheduleTrack(BGM_BASS, 'triangle', 0.16, bgmNextLoopAt);
+        let end = bgmNextLoopAt;
+        for (const [notes, type, vol, attack] of track.voices) {
+            end = scheduleTrack(notes, type, vol, attack, beat, bgmNextLoopAt);
+        }
+        bgmNextLoopAt = end;
     }
     bgmTimer = setTimeout(scheduleBgmLoop, 1000);
 }
@@ -901,7 +934,7 @@ function startBgm() {
     bgmOn = true;
     bgmNextLoopAt = 0;
     scheduleBgmLoop();
-    console.log('🎵 BGM started');
+    console.log('🎵 BGM started: ' + bgmTrack);
 }
 
 function stopBgm() {
@@ -922,14 +955,28 @@ function updateBgmButton() {
     if (btn) btn.textContent = bgmOn ? '🔊 Music: ON' : '🔇 Music: OFF';
 }
 
+function updateTrackButton() {
+    const btn = document.getElementById('bgm-track-btn');
+    if (btn) btn.textContent = '🎼 Track: ' + BGM_TRACKS[bgmTrack].label;
+}
+
 function toggleBgm() {
     if (bgmOn) stopBgm(); else startBgm();
     updateBgmButton();
 }
 
-// The BGM button has no server handler; it is purely client-side
+function cycleBgmTrack() {
+    const i = BGM_TRACK_ORDER.indexOf(bgmTrack);
+    bgmTrack = BGM_TRACK_ORDER[(i + 1) % BGM_TRACK_ORDER.length];
+    if (bgmOn) { stopBgm(); startBgm(); }
+    updateTrackButton();
+}
+
+// The BGM buttons have no server handler; they are purely client-side
 document.addEventListener('click', (e) => {
-    if (e.target.closest && e.target.closest('#bgm-btn')) toggleBgm();
+    if (!e.target.closest) return;
+    if (e.target.closest('#bgm-btn')) toggleBgm();
+    else if (e.target.closest('#bgm-track-btn')) cycleBgmTrack();
 });
 
 function playHitSound() {
@@ -1292,6 +1339,7 @@ with gr.Blocks(title="Battleship Game") as app:
             mode_btn = gr.Button("Switch to Word Puzzle Mode")
             clear_btn = gr.Button("Clear Selection", visible=False)
             gr.Button("🔇 Music: OFF", elem_id="bgm-btn")
+            gr.Button("🎼 Track: Arcade", elem_id="bgm-track-btn")
     
         with gr.Row():
             with gr.Column():
