@@ -953,10 +953,17 @@ function createFirework(x, y) {
 
 let victoryTriggered = false;
 
-function showVictoryScreen() {
-    // Only celebrate once per win, even if the win text is seen repeatedly
-    if (victoryTriggered) return;
+// Claim the current win exactly once: play the fanfare and schedule the overlay.
+// Returns false if this win was already celebrated.
+function celebrateVictory(soundDelay) {
+    if (victoryTriggered) return false;
     victoryTriggered = true;
+    setTimeout(playVictorySound, soundDelay);
+    setTimeout(showVictoryScreen, 300);
+    return true;
+}
+
+function showVictoryScreen() {
     console.log('🏆 VICTORY! Showing celebration');
     
     let overlay = document.getElementById('victory-overlay');
@@ -1014,8 +1021,7 @@ function checkForGameEvents() {
                 playWordSolvedSound();
             }
             if (text.includes('You Win!') || text.includes('🎉')) {
-                setTimeout(playVictorySound, wordSolved ? 450 : 0);
-                setTimeout(showVictoryScreen, 300);
+                celebrateVictory(wordSolved ? 450 : 0);
             } else if (!wordSolved && text.includes('Hit at')) {
                 playHitSound();
             } else if (!wordSolved && text.includes('Miss at')) {
@@ -1029,8 +1035,7 @@ function checkForGameEvents() {
     if (!victoryTriggered) {
         const allText = document.body.textContent || '';
         if (allText.includes('You Win!')) {
-            playVictorySound();
-            setTimeout(showVictoryScreen, 300);
+            celebrateVictory(0);
         }
     }
 }
