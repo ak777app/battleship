@@ -109,7 +109,7 @@ Each bug is documented with: Title, Reported by, Status (Open / In progress / Fi
 - **Status:** Fixed
 - **Description:** The game tracks only a total hit count and never per-ship sinking. After the AI destroys a ship, `ai_target_mode` stays True and stale adjacent cells from that ship remain in `ai_target_queue` (lines ~172-182). The mode is only cleared when the queue happens to empty on a miss (lines ~193-195).
 - **Impact:** The AI wastes turns hunting around an already-sunk ship instead of resuming its search, and the "smart targeting" heuristic behaves incoherently — a subtle difficulty/quality bug.
-- **Fix:** Ship identity is now recorded in `player_fleet` (a list of cell lists) by both `place_ship` and `_place_spread_fleet`. New `_ship_sunk(row, col)` checks whether every cell of the ship containing the hit is `X`; when it is, `_ai_attack` clears `ai_target_queue`, `ai_target_mode` and `ai_last_hit`, reports "AI sank your ship at …", and resumes the random search next turn.
+- **Fix:** Ship identity is now recorded in `player_fleet` (a list of cell lists) by both `place_ship` and `_place_spread_fleet`. New `_ship_sunk(row, col)` checks whether every cell of the ship containing the hit is `X`; when it is, `_ai_attack` rebuilds `ai_target_queue` from `_unsunk_hit_neighbors()` (cells next to hits on other, still-unsunk ships — matters when ships touch), clears `ai_last_hit`, drops target mode if nothing is left, and reports "AI sank your ship at …".
 - **Devin session:** https://app.devin.ai/sessions/a110ddb7b140405a8e64afe462dc7831
 - **PR:** https://github.com/ak777app/battleship/pull/17
 

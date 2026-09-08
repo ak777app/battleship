@@ -462,6 +462,23 @@ class BattleshipGame:
             self.message = f"Selection cleared. Solved {self.solved_count}/{len(self.target_words)}"
         return self.message
     
+    def _unsunk_hit_neighbors(self):
+        """Unattacked cells adjacent to hits on player ships that are not yet sunk"""
+        queue = []
+        for cells in self.player_fleet:
+            if all(self.player_grid[r][c] == "X" for r, c in cells):
+                continue
+            for r, c in cells:
+                if self.player_grid[r][c] != "X":
+                    continue
+                for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+                    nr, nc = r + dr, c + dc
+                    if (0 <= nr < GRID_SIZE and 0 <= nc < GRID_SIZE and
+                        self.player_grid[nr][nc] in ("~", "S") and
+                        (nr, nc) not in queue):
+                        queue.append((nr, nc))
+        return queue
+
     def _ship_sunk(self, row, col):
         """True if the player ship containing (row, col) has every cell hit"""
         for cells in self.player_fleet:
@@ -511,9 +528,9 @@ class BattleshipGame:
                 return self.message
             
             if self._ship_sunk(row, col):
-                # Ship destroyed: stop hunting around it and resume the search
-                self.ai_target_mode = False
-                self.ai_target_queue = []
+                # Ship destroyed: keep hunting only around other damaged, unsunk ships
+                self.ai_target_queue = self._unsunk_hit_neighbors()
+                self.ai_target_mode = bool(self.ai_target_queue)
                 self.ai_last_hit = None
                 result = f"AI sank your ship at {format_coordinate(row, col)}!"
         else:
@@ -570,8 +587,8 @@ def board_updates(game):
 def placement_info(game):
     """Hidden HTML carrying game state for the front-end (placement preview, leave-page guard)"""
     shots = any(cell in ("X", "O") for grid in (game.player_grid, game.ai_grid) for row in grid for cell in row)
-    placing = game.mode == "classic" and game.game_phase == "placement" and game.current_ship_index > 0
-    in_progress = game.game_phase != "ended" and (shots or placing)
+    fleet_placed = game.mode == "classic" and game.current_ship_index > 0
+    in_progress = game.game_phase != "ended" and (shots or fleet_placed)
     size = SHIPS[game.ship_names[game.current_ship_index]] if game.game_phase == "placement" else 0
     return gr.update(value=(f'<div id="placement-info" data-phase="{game.game_phase}" data-size="{size}" '
                             f'data-orient="{game.ship_orientation}" data-progress="{int(in_progress)}"></div>'))

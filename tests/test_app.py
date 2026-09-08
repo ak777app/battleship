@@ -486,6 +486,24 @@ def test_ai_attack_sinking_ship_resets_targeting(playing):
     assert playing.ai_last_hit is None
 
 
+def test_ai_attack_sinking_keeps_hunting_other_damaged_ship(playing):
+    """Touching ships: sinking one must not drop targets around another damaged ship"""
+    playing.player_ships[5][6] = "S"          # ship A: (5,5),(5,6) - (5,6) already hit
+    playing.player_grid[5][6] = "X"
+    for c in (6, 7, 8):                        # ship B: (6,6),(6,7),(6,8) - (6,6) already hit
+        playing.player_ships[6][c] = "S"
+    playing.player_grid[6][6] = "X"
+    playing.player_fleet = [[(5, 5), (5, 6)], [(6, 6), (6, 7), (6, 8)]]
+    playing.total_ship_cells = 5
+    playing.ai_hits = 2
+    playing.ai_target_mode = True
+    playing.ai_target_queue = [(5, 5), (4, 5), (7, 6)]
+    assert playing._ai_attack() == "AI sank your ship at F6!"
+    assert playing.ai_target_mode is True
+    assert set(playing.ai_target_queue) == {(7, 6), (6, 5), (6, 7)}
+    assert (4, 5) not in playing.ai_target_queue and (4, 6) not in playing.ai_target_queue
+
+
 def test_ship_sunk_unknown_cell(playing):
     playing.player_fleet = [[(5, 5)]]
     assert playing._ship_sunk(0, 0) is False
@@ -554,6 +572,14 @@ def test_placement_info_classic_progress(classic):
     classic.place_ship(0, 0)
     html = app.placement_info(classic)["value"]
     assert 'data-size="4"' in html and 'data-progress="1"' in html
+
+
+def test_placement_info_progress_after_fleet_placed_before_first_shot(classic):
+    for i in range(len(SHIPS)):
+        classic.place_ship(i * 2, 0)
+    assert classic.game_phase == "playing"
+    html = app.placement_info(classic)["value"]
+    assert 'data-size="0"' in html and 'data-progress="1"' in html
 
 
 def test_placement_info_playing_and_ended(playing, quiet_ai):
