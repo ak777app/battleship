@@ -53,6 +53,8 @@ Each bug is documented with: Title, Reported by, Status (Open / In progress / Fi
 - **Status:** Open
 - **Description:** `game = BattleshipGame()` is a single module-level instance (line ~200) used directly by every handler, so all Gradio clients and browser tabs share one board, one turn, and one placement phase.
 - **Impact:** Two concurrent users (or even two tabs of the same user) corrupt each other's game: ships placed by one appear for the other, turns interleave, and resets wipe out other players' games.
+
+  Update (PR #5, word-puzzle mode): the shared instance now also carries `game.mode`. When one client switches modes, `handle_grid_click` reroutes every other client's clicks to the new mode while their UI (grid visibility, labels, theme) still shows the old one. Flagged by Devin Review on PR #5; the user chose to leave the shared-state architecture as is for now.
 - **Fix (proposed):** Move game state to per-session storage (e.g. a `gr.State` holding a `BattleshipGame`, or a session-scoped instance keyed by Gradio session hash) and thread it through every handler.
 - **Devin session:** _(to fill in when the fix starts)_
 - **PR:** _(to fill in when opened)_
@@ -184,3 +186,39 @@ Each bug is documented with: Title, Reported by, Status (Open / In progress / Fi
 - **Fix (tier b, Open follow-up):** Full persistence via localStorage or a server-side session store, coordinated with bug #4.
 - **Devin session:** _(to fill in when the fix starts)_
 - **PR:** _(to fill in when opened)_
+
+---
+
+## Bug 15 — Word mode: scrambled selections solved hidden words
+
+- **Reported by:** Devin Review (PR #5)
+- **Status:** Fixed
+- **Description:** The first version of `BattleshipGame.select_cell` compared `set(selected_cells) == set(target["cells"])`, discarding click order. Selecting a word's letters backwards or in any scrambled order counted as spelling it (same for decoys).
+- **Impact:** Players could "solve" a word they never spelled, trivialising the puzzle.
+- **Fix:** New `_spells(cells)` helper requires the ordered selection to equal the word's cells forwards or backwards; used for both target and decoy matching.
+- **Devin session:** https://app.devin.ai/sessions/72e9503ebf3d48578c53ab4826946869
+- **PR:** https://github.com/ak777app/battleship/pull/5
+
+---
+
+## Bug 16 — Word mode: random camouflage could spell unsolvable copies of hidden words
+
+- **Reported by:** Devin Review (PR #5)
+- **Status:** Fixed
+- **Description:** `_place_ai_words` filled leftover cells with uniformly random letters. Those letters (alone or together with placed words) could form a second straight-line occurrence of a target or decoy — especially the 2-letter targets PR / CI / QA — which `select_cell` rejected because only the recorded coordinates are recognised.
+- **Impact:** A visibly valid word received no credit (or no decoy popup), which looks like a broken game.
+- **Fix:** `_fill_camouflage` re-rolls filler cells that participate in a stray occurrence (`_stray_word_cells`, both reading directions). If a stray run consists only of placed letters, the layout attempt is rejected and `_place_ai_words` retries with a fresh layout (up to 50 attempts).
+- **Devin session:** https://app.devin.ai/sessions/72e9503ebf3d48578c53ab4826946869
+- **PR:** https://github.com/ak777app/battleship/pull/5
+
+---
+
+## Bug 17 — Word mode: reversed sub-runs of a placed word escaped stray-word cleanup
+
+- **Reported by:** Devin Review (PR #5)
+- **Status:** Fixed
+- **Description:** The stray-word check exempted any contiguous sub-run of a recorded placement, so with `CODE` placed its cells `C-O-D` read backwards as `DOC` were treated as legitimate even when `DOC` was a separate hidden target.
+- **Impact:** Same symptom as bug #16 — a readable copy of a hidden word that cannot be solved.
+- **Fix:** `_stray_word_cells` only considers words actually placed on this board (chosen targets + placed decoys), and a sub-run is exempt only when the reading that matches a placed word is a substring of the containing word in that direction. Layouts where placed letters still collide are rejected and regenerated.
+- **Devin session:** https://app.devin.ai/sessions/72e9503ebf3d48578c53ab4826946869
+- **PR:** https://github.com/ak777app/battleship/pull/5

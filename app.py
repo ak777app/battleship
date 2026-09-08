@@ -16,15 +16,13 @@ SHIPS = {
 # grouped by word length (5, 4, 3, 3, 2 letters, mirroring the classic fleet).
 WORD_SLOT_LENGTHS = [5, 4, 3, 3, 2]
 TARGET_WORD_BANK = {
-    5: ["DEBUG", "BUILD", "TESTS", "PATCH", "MERGE"],
+    5: ["DEBUG", "BUILD", "PATCH", "MERGE"],
     4: ["TEST", "CODE", "LINT", "PORT", "REPO"],
     3: ["FIX", "RUN", "DOC", "GIT"],
     2: ["PR", "CI", "QA"],
 }
 
 # Decoys: SWE tasks that need human judgment, ownership, or a human in the loop.
-TARGET_WORD_BANK_ALL = [w for words in TARGET_WORD_BANK.values() for w in words]
-
 DECOY_WORD_BANK = {
     "SCOPE": "Deciding what to build and why is a product judgment call for humans.",
     "HIRE": "Hiring and evaluating engineers needs human judgment and accountability.",
@@ -131,13 +129,18 @@ class BattleshipGame:
         return False
     
     def _stray_word_cells(self):
-        """Cells of straight runs spelling a bank word (either direction) that are not a recorded placement."""
-        bank = set(TARGET_WORD_BANK_ALL) | set(DECOY_WORD_BANK)
-        recorded = [w["cells"] for w in self.target_words + self.decoy_words]
+        """Cells of straight runs spelling a placed word (either direction) that are not its recorded placement."""
+        recorded = self.target_words + self.decoy_words
+        bank = {entry["word"] for entry in recorded}
         
-        def is_recorded(run):
-            return any(cells[i:i + len(run)] == run
-                       for cells in recorded for i in range(len(cells) - len(run) + 1))
+        def is_recorded(run, text):
+            """run is a placed word, or a same-direction sub-run of one (not a reversed reading)"""
+            return any(
+                entry["cells"][i:i + len(run)] == run
+                and ((text in bank and text in entry["word"])
+                     or (text[::-1] in bank and text[::-1] in entry["word"]))
+                for entry in recorded for i in range(len(entry["cells"]) - len(run) + 1)
+            )
         stray = set()
         lines = [[(r, c) for c in range(GRID_SIZE)] for r in range(GRID_SIZE)]
         lines += [[(r, c) for r in range(GRID_SIZE)] for c in range(GRID_SIZE)]
@@ -146,7 +149,7 @@ class BattleshipGame:
                 for size in range(2, GRID_SIZE - start + 1):
                     run = line[start:start + size]
                     text = "".join(self.ai_ships[r][c] for r, c in run)
-                    if (text in bank or text[::-1] in bank) and not is_recorded(run):
+                    if (text in bank or text[::-1] in bank) and not is_recorded(run, text):
                         stray.update(run)
         return stray
     
