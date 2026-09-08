@@ -991,15 +991,18 @@ function checkForGameEvents() {
             console.log('📝 Message changed:', text);
             lastMessageText = text;
             
-            if (text.includes('solved!')) {
+            // 'words found' also appears in the word-mode win message, so the last word chimes too
+            const wordSolved = text.includes('solved!') || text.includes('words found');
+            if (wordSolved) {
                 playWordSolvedSound();
-            } else if (text.includes('Hit at')) {
-                playHitSound();
-            } else if (text.includes('Miss at')) {
-                playMissSound();
-            } else if (text.includes('You Win!') || text.includes('🎉')) {
-                playVictorySound();
+            }
+            if (text.includes('You Win!') || text.includes('🎉')) {
+                setTimeout(playVictorySound, wordSolved ? 450 : 0);
                 setTimeout(showVictoryScreen, 300);
+            } else if (!wordSolved && text.includes('Hit at')) {
+                playHitSound();
+            } else if (!wordSolved && text.includes('Miss at')) {
+                playMissSound();
             }
         }
     });
