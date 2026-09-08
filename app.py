@@ -23,6 +23,8 @@ TARGET_WORD_BANK = {
 }
 
 # Decoys: SWE tasks that need human judgment, ownership, or a human in the loop.
+TARGET_WORD_BANK_ALL = [w for words in TARGET_WORD_BANK.values() for w in words]
+
 DECOY_WORD_BANK = {
     "SCOPE": "Deciding what to build and why is a product judgment call for humans.",
     "HIRE": "Hiring and evaluating engineers needs human judgment and accountability.",
@@ -83,6 +85,13 @@ class BattleshipGame:
     
     def _place_ai_words(self):
         """Fill ai_ships with 5 target words, best-effort decoys, and random camouflage letters."""
+        for _ in range(50):
+            if self._try_place_ai_words():
+                return
+        raise RuntimeError("Could not generate a word grid without stray words.")
+    
+    def _try_place_ai_words(self):
+        """One layout attempt; False if placed words accidentally spell an extra bank word."""
         self.ai_ships = [["~" for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
         self.target_words = []
         self.decoy_words = []
@@ -102,10 +111,39 @@ class BattleshipGame:
             if cells:
                 self.decoy_words.append({"word": word, "cells": cells, "reason": DECOY_WORD_BANK[word]})
         
-        for r in range(GRID_SIZE):
-            for c in range(GRID_SIZE):
-                if self.ai_ships[r][c] == "~":
-                    self.ai_ships[r][c] = random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        filler = [(r, c) for r in range(GRID_SIZE) for c in range(GRID_SIZE) if self.ai_ships[r][c] == "~"]
+        return self._fill_camouflage(filler)
+    
+    def _fill_camouflage(self, filler_cells):
+        """Fill cells with random letters, re-rolling any that spell an unrecorded bank word."""
+        filler = set(filler_cells)
+        for r, c in filler:
+            self.ai_ships[r][c] = random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        for _ in range(200):
+            stray = self._stray_word_cells()
+            if not stray:
+                return True
+            if not stray & filler:
+                return False  # stray word is made of placed letters; needs a new layout
+            for r, c in stray & filler:
+                self.ai_ships[r][c] = random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        return False
+    
+    def _stray_word_cells(self):
+        """Cells of straight runs spelling a bank word (either direction) that are not a recorded placement."""
+        bank = set(TARGET_WORD_BANK_ALL) | set(DECOY_WORD_BANK)
+        recorded = {tuple(w["cells"]) for w in self.target_words + self.decoy_words}
+        stray = set()
+        lines = [[(r, c) for c in range(GRID_SIZE)] for r in range(GRID_SIZE)]
+        lines += [[(r, c) for r in range(GRID_SIZE)] for c in range(GRID_SIZE)]
+        for line in lines:
+            for start in range(GRID_SIZE):
+                for size in range(2, GRID_SIZE - start + 1):
+                    run = line[start:start + size]
+                    text = "".join(self.ai_ships[r][c] for r, c in run)
+                    if (text in bank or text[::-1] in bank) and tuple(run) not in recorded:
+                        stray.update(run)
+        return stray
     
     def _place_word_anywhere(self, word):
         """Write word into a random free straight run of ai_ships. Returns cells or None."""
@@ -297,10 +335,9 @@ class BattleshipGame:
             self.selected_cells.append(cell)
         
         total = len(self.target_words)
-        selected = set(self.selected_cells)
         
         for target in self.target_words:
-            if not target["solved"] and selected == set(target["cells"]):
+            if not target["solved"] and self._spells(target["cells"]):
                 target["solved"] = True
                 self.solved_count += 1
                 self.selected_cells = []
@@ -312,7 +349,7 @@ class BattleshipGame:
                 return self.message
         
         for decoy in self.decoy_words:
-            if selected == set(decoy["cells"]):
+            if self._spells(decoy["cells"]):
                 self.selected_cells = []
                 gr.Warning(f"🚫 {decoy['word']}: {decoy['reason']}")
                 self.message = (f"🚫 {decoy['word']} is a task better owned by humans — not a target. "
@@ -326,6 +363,10 @@ class BattleshipGame:
             self.message = (f"Selected: {spelled} ({len(self.selected_cells)} letters). "
                             f"Words run straight across or down. Solved {self.solved_count}/{total}")
         return self.message
+    
+    def _spells(self, cells):
+        """True if the ordered selection traces cells forwards or backwards"""
+        return self.selected_cells == cells or self.selected_cells == cells[::-1]
     
     def clear_selection(self):
         self.selected_cells = []
