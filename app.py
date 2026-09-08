@@ -329,6 +329,9 @@ class BattleshipGame:
     def _solved_cells(self):
         return {cell for w in self.target_words if w["solved"] for cell in w["cells"]}
     
+    def _target_cells(self):
+        return {cell for w in self.target_words for cell in w["cells"]}
+    
     def select_cell(self, row, col):
         """Word mode: toggle a letter in the selection and check for word matches"""
         if self.game_phase != "playing":
@@ -451,6 +454,8 @@ def word_cell_update(r, c):
     """Button update for a word-mode letter cell, styled by solved/selected state"""
     classes = ["word-cell"]
     variant = "secondary"
+    if (r, c) in game._target_cells():
+        classes.append("target-cell")
     if (r, c) in game._solved_cells():
         classes.append("solved-cell")
     elif (r, c) in game.selected_cells:
@@ -561,8 +566,11 @@ WORD_MODE_CSS = """
     border-color: #6c6cff !important;
 }
 .word-mode button.word-cell {
-    font-weight: 600;
+    font-weight: 400;
     letter-spacing: 0.05em;
+}
+.word-mode button.target-cell {
+    font-weight: 900;
 }
 .word-mode button.selected-cell {
     border: 2px solid #6c6cff !important;
@@ -667,12 +675,13 @@ with gr.Blocks(title="Battleship Game") as app:
         Press **Switch to Word Puzzle Mode** for a single 10x10 grid of letters. Five hidden words
         (5, 4, 3, 3 and 2 letters, running across or down) are the AI's "ships" — each is a coding
         task Devin is great at (e.g. DEBUG, LINT, FIX, PR). Click letters to select them (click again
-        to deselect, or use **Clear Selection**); spell a full word to sink it. Cells of solved words
+        to deselect, or use **Clear Selection**); spell a full word to sink it. Letters that belong to a
+        hidden target word are shown in **bold** as a hint. Cells of solved words
         turn green. The grid also hides decoy words — SWE tasks better owned by humans (e.g. SCOPE,
         HIRE, ONCALL). Spelling a decoy opens a popup explaining why it isn't a fit for Devin and
         doesn't count toward the win. Find all five targets to win; the AI never fires back.
     
-        **Word Legend**: letter = unsolved | green glow = solved word | accent border = selected
+        **Word Legend**: **bold** letter = part of a target | green glow = solved word | accent border = selected
         """)
     
         flat_buttons = ([player_buttons[r][c] for r in range(GRID_SIZE) for c in range(GRID_SIZE)] +
