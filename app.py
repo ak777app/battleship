@@ -599,6 +599,412 @@ def toggle_mode_handler():
 def clear_selection_handler():
     return [game.clear_selection()] + board_updates()
 
+ARCADE_CSS = """
+/* Import retro gaming font */
+@import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+/* Arcade video game styling */
+body {
+    background: linear-gradient(135deg, #0a0e27 0%, #1a1a2e 100%) !important;
+    font-family: 'Press Start 2P', cursive !important;
+}
+
+.gradio-container {
+    background: radial-gradient(circle at center, #16213e 0%, #0f1419 100%) !important;
+    border: 3px solid #00ff00 !important;
+    box-shadow: 0 0 30px rgba(0, 255, 0, 0.5), inset 0 0 50px rgba(0, 255, 0, 0.1) !important;
+}
+
+/* Neon glow buttons */
+button {
+    background: linear-gradient(145deg, #1a1a2e, #16213e) !important;
+    border: 2px solid #00ff00 !important;
+    color: #00ff00 !important;
+    text-shadow: 0 0 10px #00ff00 !important;
+    box-shadow: 0 0 10px rgba(0, 255, 0, 0.5) !important;
+    font-family: 'Press Start 2P', cursive !important;
+    font-size: 10px !important;
+    transition: all 0.3s ease !important;
+}
+
+button:hover {
+    background: linear-gradient(145deg, #00ff00, #00cc00) !important;
+    color: #000 !important;
+    box-shadow: 0 0 20px rgba(0, 255, 0, 1) !important;
+    transform: scale(1.05) !important;
+}
+
+/* Game grid cells with neon borders */
+.grid-cell {
+    border: 1px solid #00ff00 !important;
+    box-shadow: inset 0 0 5px rgba(0, 255, 0, 0.3) !important;
+    background: #0f1419 !important;
+    transition: all 0.2s ease !important;
+}
+
+.grid-cell:hover {
+    box-shadow: 0 0 15px rgba(0, 255, 0, 0.8) !important;
+    transform: scale(1.1) !important;
+}
+
+/* Message box - arcade terminal style */
+textarea {
+    background: #000 !important;
+    border: 3px solid #00ff00 !important;
+    color: #00ff00 !important;
+    font-family: 'Press Start 2P', cursive !important;
+    text-shadow: 0 0 10px #00ff00 !important;
+    padding: 20px !important;
+    box-shadow: 0 0 20px rgba(0, 255, 0, 0.5) !important;
+    font-size: 12px !important;
+}
+
+/* Headings with neon green glow */
+h1, h2, h3, label {
+    color: #00ff00 !important;
+    text-shadow: 0 0 20px #00ff00, 0 0 40px #00ff00 !important;
+    font-family: 'Press Start 2P', cursive !important;
+    animation: neon-flicker 2s infinite alternate !important;
+}
+
+/* Make rule/instruction text white and visible */
+.gr-prose, .gr-prose p, .gr-prose li, .gr-markdown, 
+.gr-markdown p, .gr-markdown li, .gr-markdown ol, .gr-markdown ul,
+p, li, span, div {
+    color: #ffffff !important;
+    text-shadow: 0 0 5px rgba(255, 255, 255, 0.3) !important;
+}
+
+/* Specific targeting for instruction text */
+.gradio-container p, 
+.gradio-container li,
+.gradio-container span:not(button span) {
+    color: #ffffff !important;
+    font-family: 'Press Start 2P', cursive !important;
+    font-size: 10px !important;
+    line-height: 1.8 !important;
+    text-shadow: 0 0 5px rgba(255, 255, 255, 0.3) !important;
+}
+
+/* Legend and symbols - make them bright */
+.gr-prose strong, strong, b {
+    color: #00ff00 !important;
+    text-shadow: 0 0 10px #00ff00 !important;
+}
+
+/* Target words in word mode - bold and highly visible */
+button b, button strong {
+    color: #ffff00 !important;
+    text-shadow: 0 0 15px #ffff00, 0 0 25px #ffff00 !important;
+    font-weight: 900 !important;
+    font-size: 14px !important;
+}
+
+@keyframes neon-flicker {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.8; }
+}
+
+/* Victory overlay */
+#victory-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.95);
+    display: none;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999;
+    flex-direction: column;
+}
+
+#victory-message {
+    font-family: 'Press Start 2P', cursive;
+    font-size: 64px;
+    color: #00ff00;
+    text-shadow: 
+        0 0 10px #00ff00,
+        0 0 20px #00ff00,
+        0 0 30px #00ff00,
+        0 0 40px #00ff00,
+        0 0 70px #00ff00,
+        0 0 80px #00ff00,
+        0 0 100px #00ff00;
+    animation: neon-glow 1.5s ease-in-out infinite alternate;
+    text-align: center;
+    padding: 40px;
+    line-height: 1.5;
+}
+
+@keyframes neon-glow {
+    from {
+        text-shadow: 
+            0 0 10px #00ff00,
+            0 0 20px #00ff00,
+            0 0 30px #00ff00,
+            0 0 40px #00ff00,
+            0 0 70px #00ff00;
+    }
+    to {
+        text-shadow: 
+            0 0 20px #00ff00,
+            0 0 30px #00ff00,
+            0 0 40px #00ff00,
+            0 0 50px #00ff00,
+            0 0 80px #00ff00,
+            0 0 90px #00ff00,
+            0 0 120px #00ff00;
+    }
+}
+
+/* Firework particles */
+.firework {
+    position: fixed;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 10000;
+}
+
+@keyframes explode {
+    0% {
+        transform: translate(0, 0);
+        opacity: 1;
+    }
+    100% {
+        transform: translate(var(--tx), var(--ty));
+        opacity: 0;
+    }
+}
+"""
+
+
+
+
+GAME_JS = """
+console.log('🎮 Game effects initializing...');
+
+// Sound effects using Web Audio API
+let audioContext;
+let isAudioInitialized = false;
+
+function initAudio() {
+    if (!isAudioInitialized && !audioContext) {
+        try {
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            isAudioInitialized = true;
+            console.log('✅ Audio initialized');
+        } catch (e) {
+            console.error('Audio init failed:', e);
+        }
+    }
+}
+
+// Initialize audio on ANY user interaction
+document.addEventListener('click', initAudio);
+document.addEventListener('keydown', initAudio);
+
+function playHitSound() {
+    initAudio();
+    if (!audioContext) return;
+    
+    try {
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.type = 'sawtooth';
+        oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(50, audioContext.currentTime + 0.3);
+        
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+        
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.3);
+        console.log('💥 Hit sound played');
+    } catch (e) {
+        console.error('Hit sound failed:', e);
+    }
+}
+
+function playMissSound() {
+    initAudio();
+    if (!audioContext) return;
+    
+    try {
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(150, audioContext.currentTime);
+        oscillator.frequency.exponentialRampToValueAtTime(80, audioContext.currentTime + 0.15);
+        
+        gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.15);
+        
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.15);
+        console.log('💧 Miss sound played');
+    } catch (e) {
+        console.error('Miss sound failed:', e);
+    }
+}
+
+function playVictorySound() {
+    initAudio();
+    if (!audioContext) return;
+    
+    try {
+        const notes = [262, 330, 392, 523];
+        notes.forEach((freq, i) => {
+            setTimeout(() => {
+                const osc = audioContext.createOscillator();
+                const gain = audioContext.createGain();
+                osc.connect(gain);
+                gain.connect(audioContext.destination);
+                osc.type = 'square';
+                osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0.2, audioContext.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+                osc.start(audioContext.currentTime);
+                osc.stop(audioContext.currentTime + 0.5);
+            }, i * 150);
+        });
+        console.log('🎺 Victory sound played');
+    } catch (e) {
+        console.error('Victory sound failed:', e);
+    }
+}
+
+function createFirework(x, y) {
+    console.log('🎆 Creating firework at', x, y);
+    const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'];
+    const particleCount = 80;
+    
+    for (let i = 0; i < particleCount; i++) {
+        const particle = document.createElement('div');
+        particle.className = 'firework';
+        particle.style.left = x + 'px';
+        particle.style.top = y + 'px';
+        particle.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+        
+        const angle = (Math.PI * 2 * i) / particleCount;
+        const velocity = 100 + Math.random() * 150;
+        const tx = Math.cos(angle) * velocity;
+        const ty = Math.sin(angle) * velocity;
+        
+        particle.style.setProperty('--tx', tx + 'px');
+        particle.style.setProperty('--ty', ty + 'px');
+        particle.style.animation = 'explode 1.2s ease-out forwards';
+        
+        document.body.appendChild(particle);
+        
+        setTimeout(() => {
+            if (particle.parentNode) {
+                particle.parentNode.removeChild(particle);
+            }
+        }, 1200);
+    }
+}
+
+function showVictoryScreen() {
+    console.log('🏆 VICTORY! Showing celebration');
+    
+    let overlay = document.getElementById('victory-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'victory-overlay';
+        overlay.innerHTML = '<div id="victory-message">HUMANS RULE<br/>THE WORLD!</div>';
+        document.body.appendChild(overlay);
+    }
+    
+    overlay.style.display = 'flex';
+    
+    // Launch fireworks in waves
+    let fireworkCount = 0;
+    const launchWave = () => {
+        for (let i = 0; i < 5; i++) {
+            setTimeout(() => {
+                const x = 200 + Math.random() * (window.innerWidth - 400);
+                const y = 100 + Math.random() * (window.innerHeight - 200);
+                createFirework(x, y);
+            }, i * 100);
+        }
+    };
+    
+    // Launch 8 waves of fireworks
+    for (let wave = 0; wave < 8; wave++) {
+        setTimeout(launchWave, wave * 600);
+    }
+    
+    // Hide after 10 seconds
+    setTimeout(() => {
+        overlay.style.display = 'none';
+    }, 10000);
+}
+
+// Watch for game messages more aggressively
+let lastMessageText = '';
+
+function checkForGameEvents() {
+    // Find all textareas (message boxes)
+    const textareas = document.querySelectorAll('textarea');
+    textareas.forEach(textarea => {
+        const text = textarea.value || '';
+        
+        if (text !== lastMessageText) {
+            console.log('📝 Message changed:', text);
+            lastMessageText = text;
+            
+            if (text.includes('Hit at')) {
+                playHitSound();
+            } else if (text.includes('Miss at')) {
+                playMissSound();
+            } else if (text.includes('You Win!') || text.includes('🎉')) {
+                playVictorySound();
+                setTimeout(showVictoryScreen, 300);
+            }
+        }
+    });
+    
+    // Also check all text content
+    const allText = document.body.textContent || '';
+    if (allText.includes('You Win!') && !document.getElementById('victory-overlay')?.style.display === 'flex') {
+        playVictorySound();
+        setTimeout(showVictoryScreen, 300);
+    }
+}
+
+// Poll for changes every 200ms
+setInterval(checkForGameEvents, 200);
+
+// Also use MutationObserver as backup
+const observer = new MutationObserver(() => {
+    checkForGameEvents();
+});
+
+observer.observe(document.body, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+    attributes: false
+});
+
+console.log('✅ Game effects ready!');
+"""
+
+
+
+
 WORD_MODE_CSS = """
 /* Grid headers: row labels are a fixed 40px column, column letters flex exactly like the buttons */
 .row-label {
@@ -797,4 +1203,9 @@ with gr.Blocks(title="Battleship Game") as app:
         )
 
 if __name__ == "__main__":
-    app.launch(css=WORD_MODE_CSS)
+    # Combine arcade styling with word mode styling
+    combined_css = ARCADE_CSS + WORD_MODE_CSS
+    app.launch(
+        css=combined_css,
+        head=f"<script>{GAME_JS}</script>"
+    )
