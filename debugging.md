@@ -207,7 +207,7 @@ Each bug is documented with: Title, Reported by, Status (Open / In progress / Fi
 - **Status:** Fixed
 - **Description:** `_place_ai_words` filled leftover cells with uniformly random letters. Those letters (alone or together with placed words) could form a second straight-line occurrence of a target or decoy — especially the 2-letter targets PR / CI / QA — which `select_cell` rejected because only the recorded coordinates are recognised.
 - **Impact:** A visibly valid word received no credit (or no decoy popup), which looks like a broken game.
-- **Fix:** `_fill_camouflage` re-rolls filler cells that participate in a stray occurrence (`_stray_word_cells`, both reading directions). If a stray run consists only of placed letters, the layout attempt is rejected and `_place_ai_words` retries with a fresh layout (up to 50 attempts).
+- **Fix:** `_fill_camouflage` re-rolls filler cells that participate in a stray occurrence (`_stray_word_cells`, both reading directions). If a stray run consists only of placed letters, the layout attempt is rejected and `_place_ai_words` retries with a fresh layout (up to 50 attempts). The check covers the *entire* target and decoy bank, not just the words placed this game, so filler can't spell an unplaced bank word either (a follow-up Devin Review finding). Known exception: `DOC` reads backwards inside `CODE`, so when `CODE` is placed those three cells are allowed to spell `DOC`.
 - **Devin session:** https://app.devin.ai/sessions/72e9503ebf3d48578c53ab4826946869
 - **PR:** https://github.com/ak777app/battleship/pull/5
 

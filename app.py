@@ -129,18 +129,19 @@ class BattleshipGame:
         return False
     
     def _stray_word_cells(self):
-        """Cells of straight runs spelling a placed word (either direction) that are not its recorded placement."""
+        """Cells of straight runs spelling any bank word (either direction) outside its recorded placement."""
         recorded = self.target_words + self.decoy_words
-        bank = {entry["word"] for entry in recorded}
-        
+        placed = {entry["word"] for entry in recorded}
+        bank = {w for words in TARGET_WORD_BANK.values() for w in words} | set(DECOY_WORD_BANK) | placed
+
         def is_recorded(run, text):
-            """run is a placed word, or a same-direction sub-run of one (not a reversed reading)"""
-            return any(
-                entry["cells"][i:i + len(run)] == run
-                and ((text in bank and text in entry["word"])
-                     or (text[::-1] in bank and text[::-1] in entry["word"]))
-                for entry in recorded for i in range(len(entry["cells"]) - len(run) + 1)
-            )
+            """run is a placed word or a sub-run of one; a reversed sub-run only passes if that word isn't placed elsewhere"""
+            for entry in recorded:
+                for i in range(len(entry["cells"]) - len(run) + 1):
+                    if entry["cells"][i:i + len(run)] == run:
+                        word = text if text in bank else text[::-1]
+                        return word in entry["word"] or word not in placed
+            return False
         stray = set()
         lines = [[(r, c) for c in range(GRID_SIZE)] for r in range(GRID_SIZE)]
         lines += [[(r, c) for r in range(GRID_SIZE)] for c in range(GRID_SIZE)]
