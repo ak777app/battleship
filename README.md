@@ -16,7 +16,7 @@ excluded from the coverage report; all game logic in `BattleshipGame` and the mo
 
 ## Deploy to Render
 
-The repo ships a `render.yaml` blueprint (free web service, `python app.py` bound to Render's `$PORT`).
+The repo ships a `render.yaml` blueprint (free web service, `server.py` serves the app with uvicorn on `$PORT`).
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/ak777app/battleship)
 
