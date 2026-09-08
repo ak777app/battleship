@@ -12,8 +12,37 @@ SHIPS = {
     "Destroyer": 2
 }
 
+# Word-puzzle mode: target "ships" are autonomous coding tasks Devin excels at,
+# grouped by word length (5, 4, 3, 3, 2 letters, mirroring the classic fleet).
+WORD_SLOT_LENGTHS = [5, 4, 3, 3, 2]
+TARGET_WORD_BANK = {
+    5: ["DEBUG", "BUILD", "PATCH", "MERGE"],
+    4: ["TEST", "CODE", "LINT", "PORT", "REPO"],
+    3: ["FIX", "RUN", "DOC", "GIT"],
+    2: ["PR", "CI", "QA"],
+}
+
+# Decoys: SWE tasks that need human judgment, ownership, or a human in the loop.
+DECOY_WORD_BANK = {
+    "SCOPE": "Deciding what to build and why is a product judgment call for humans.",
+    "HIRE": "Hiring and evaluating engineers needs human judgment and accountability.",
+    "DEMO": "Live stakeholder demos need a human presenter reading the room.",
+    "ONCALL": "Production incident ownership needs an accountable human on call.",
+    "DESIGN": "System design trade-offs need human context, ownership and buy-in.",
+    "OWN": "Long-term code ownership and accountability belong to a human team.",
+    "ASK": "Gathering requirements from stakeholders is a human conversation.",
+    "SLA": "Committing to service-level agreements is a business decision for humans.",
+    "OK": "Final sign-off and approval should come from a human reviewer.",
+}
+
 class BattleshipGame:
     def __init__(self):
+        self.mode = "classic"  # classic, word
+        self.reset_game()
+    
+    def toggle_mode(self):
+        """Flip between classic and word-puzzle mode, starting a fresh game"""
+        self.mode = "word" if self.mode == "classic" else "classic"
         self.reset_game()
     
     def reset_game(self):
@@ -31,15 +60,115 @@ class BattleshipGame:
         self.ship_names = list(SHIPS.keys())
         self.ship_orientation = "horizontal"
         self.turn = "player"
-        self.message = f"Place your {self.ship_names[0]} ({SHIPS[self.ship_names[0]]} cells)"
-        
-        # Place AI ships automatically
-        self._place_ai_ships()
         
         # AI targeting
         self.ai_last_hit = None
         self.ai_target_mode = False
         self.ai_target_queue = []
+        
+        # Word-puzzle state
+        self.target_words = []   # [{"word", "cells", "solved"}]
+        self.decoy_words = []    # [{"word", "cells", "reason"}]
+        self.selected_cells = []
+        self.solved_count = 0
+        
+        if self.mode == "word":
+            self.game_phase = "playing"
+            self._place_ai_words()
+            self.message = (f"Find {len(self.target_words)} hidden words: click letters to spell a word. "
+                            f"Solved 0/{len(self.target_words)}")
+        else:
+            self.message = f"Place your {self.ship_names[0]} ({SHIPS[self.ship_names[0]]} cells)"
+            self._place_ai_ships()
+    
+    def _place_ai_words(self):
+        """Fill ai_ships with 5 target words, best-effort decoys, and random camouflage letters."""
+        for _ in range(50):
+            if self._try_place_ai_words():
+                return
+        raise RuntimeError("Could not generate a word grid without stray words.")
+    
+    def _try_place_ai_words(self):
+        """One layout attempt; False if placed words accidentally spell an extra bank word."""
+        self.ai_ships = [["~" for _ in range(GRID_SIZE)] for _ in range(GRID_SIZE)]
+        self.target_words = []
+        self.decoy_words = []
+        
+        chosen = []
+        for length in WORD_SLOT_LENGTHS:
+            options = [w for w in TARGET_WORD_BANK[length]
+                       if not any(w in prev or prev in w for prev in chosen)]
+            chosen.append(random.choice(options))
+        
+        if not self._backtrack_place_ships([(w, len(w)) for w in chosen], 0, letters=True):
+            raise RuntimeError(f"Cannot place target words {chosen} on {GRID_SIZE}x{GRID_SIZE} board.")
+        
+        decoys = [w for w in DECOY_WORD_BANK if w not in chosen]
+        random.shuffle(decoys)
+        for word in decoys:
+            cells = self._place_word_anywhere(word)
+            if cells:
+                self.decoy_words.append({"word": word, "cells": cells, "reason": DECOY_WORD_BANK[word]})
+        
+        filler = [(r, c) for r in range(GRID_SIZE) for c in range(GRID_SIZE) if self.ai_ships[r][c] == "~"]
+        return self._fill_camouflage(filler)
+    
+    def _fill_camouflage(self, filler_cells):
+        """Fill cells with random letters, re-rolling any that spell an unrecorded bank word."""
+        filler = set(filler_cells)
+        for r, c in filler:
+            self.ai_ships[r][c] = random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        for _ in range(200):
+            stray = self._stray_word_cells()
+            if not stray:
+                return True
+            if not stray & filler:
+                return False  # stray word is made of placed letters; needs a new layout
+            for r, c in stray & filler:
+                self.ai_ships[r][c] = random.choice("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+        return False
+    
+    def _stray_word_cells(self):
+        """Cells of straight runs spelling any bank word (either direction) outside its recorded placement."""
+        recorded = self.target_words + self.decoy_words
+        placed = {entry["word"] for entry in recorded}
+        bank = {w for words in TARGET_WORD_BANK.values() for w in words} | set(DECOY_WORD_BANK) | placed
+
+        def is_recorded(run, text):
+            """run is a placed word or a sub-run of one; a reversed sub-run only passes if that word isn't placed elsewhere"""
+            for entry in recorded:
+                for i in range(len(entry["cells"]) - len(run) + 1):
+                    if entry["cells"][i:i + len(run)] == run:
+                        word = text if text in bank else text[::-1]
+                        return word in entry["word"] or word not in placed
+            return False
+        stray = set()
+        lines = [[(r, c) for c in range(GRID_SIZE)] for r in range(GRID_SIZE)]
+        lines += [[(r, c) for r in range(GRID_SIZE)] for c in range(GRID_SIZE)]
+        for line in lines:
+            for start in range(GRID_SIZE):
+                for size in range(2, GRID_SIZE - start + 1):
+                    run = line[start:start + size]
+                    text = "".join(self.ai_ships[r][c] for r, c in run)
+                    if (text in bank or text[::-1] in bank) and not is_recorded(run, text):
+                        stray.update(run)
+        return stray
+    
+    def _place_word_anywhere(self, word):
+        """Write word into a random free straight run of ai_ships. Returns cells or None."""
+        size = len(word)
+        positions = [(r, c, o)
+                     for o in ("horizontal", "vertical")
+                     for r in range(GRID_SIZE)
+                     for c in range(GRID_SIZE)
+                     if self._can_place_ship(self.ai_ships, r, c, size, o)]
+        if not positions:
+            return None
+        row, col, orientation = random.choice(positions)
+        cells = [(row, col + i) if orientation == "horizontal" else (row + i, col) for i in range(size)]
+        for (r, c), letter in zip(cells, word):
+            self.ai_ships[r][c] = letter
+        return cells
     
     def _place_ai_ships(self):
         """Place all AI ships using backtracking to guarantee success when a valid layout exists."""
@@ -53,8 +182,12 @@ class BattleshipGame:
                 f"Configuration unsatisfiable for ships: {SHIPS}"
             )
     
-    def _backtrack_place_ships(self, ship_list, index):
-        """Recursively place ships using backtracking. Returns True if successful."""
+    def _backtrack_place_ships(self, ship_list, index, letters=False):
+        """Recursively place ships using backtracking. Returns True if successful.
+        
+        With letters=True each ship name is a word whose letters are written into
+        the grid and recorded in target_words instead of the "S" marker.
+        """
         if index >= len(ship_list):
             # All ships placed successfully
             return True
@@ -84,18 +217,22 @@ class BattleshipGame:
             cells = []
             if orientation == "horizontal":
                 for i in range(ship_size):
-                    self.ai_ships[row][col + i] = "S"
+                    self.ai_ships[row][col + i] = ship_name[i] if letters else "S"
                     cells.append((row, col + i))
             else:
                 for i in range(ship_size):
-                    self.ai_ships[row + i][col] = "S"
+                    self.ai_ships[row + i][col] = ship_name[i] if letters else "S"
                     cells.append((row + i, col))
+            if letters:
+                self.target_words.append({"word": ship_name, "cells": cells, "solved": False})
             
             # Recurse to place remaining ships
-            if self._backtrack_place_ships(ship_list, index + 1):
+            if self._backtrack_place_ships(ship_list, index + 1, letters):
                 return True
             
             # Backtrack: remove this ship and try next position
+            if letters:
+                self.target_words.pop()
             for r, c in cells:
                 self.ai_ships[r][c] = "~"
         
@@ -189,6 +326,63 @@ class BattleshipGame:
         
         return f"{result}\n{ai_result}"
     
+    def _solved_cells(self):
+        return {cell for w in self.target_words if w["solved"] for cell in w["cells"]}
+    
+    def select_cell(self, row, col):
+        """Word mode: toggle a letter in the selection and check for word matches"""
+        if self.game_phase != "playing":
+            return self.message
+        
+        cell = (row, col)
+        if cell in self._solved_cells():
+            return f"{format_coordinate(row, col)} is already part of a solved word."
+        
+        if cell in self.selected_cells:
+            self.selected_cells.remove(cell)
+        else:
+            self.selected_cells.append(cell)
+        
+        total = len(self.target_words)
+        
+        for target in self.target_words:
+            if not target["solved"] and self._spells(target["cells"]):
+                target["solved"] = True
+                self.solved_count += 1
+                self.selected_cells = []
+                if self.solved_count >= total:
+                    self.game_phase = "ended"
+                    self.message = f"🎉 You Win! All {total} words found — every task a job for Devin!"
+                else:
+                    self.message = f"✅ {target['word']} solved! {self.solved_count}/{total} words found."
+                return self.message
+        
+        for decoy in self.decoy_words:
+            if self._spells(decoy["cells"]):
+                self.selected_cells = []
+                gr.Warning(f"🚫 {decoy['word']}: {decoy['reason']}")
+                self.message = (f"🚫 {decoy['word']} is a task better owned by humans — not a target. "
+                                f"Solved {self.solved_count}/{total}")
+                return self.message
+        
+        if not self.selected_cells:
+            self.message = f"Selection cleared. Solved {self.solved_count}/{total}"
+        else:
+            spelled = "".join(self.ai_ships[r][c] for r, c in self.selected_cells)
+            self.message = (f"Selected: {spelled} ({len(self.selected_cells)} letters). "
+                            f"Words run straight across or down. Solved {self.solved_count}/{total}")
+        return self.message
+    
+    def _spells(self, cells):
+        """True if the ordered selection traces cells forwards or backwards"""
+        return self.selected_cells == cells or self.selected_cells == cells[::-1]
+    
+    def clear_selection(self):
+        self.selected_cells = []
+        if self.game_phase == "playing":
+            self.message = f"Selection cleared. Solved {self.solved_count}/{len(self.target_words)}"
+        return self.message
+    
     def _ai_attack(self):
         """AI makes an attack"""
         if self.ai_target_mode and self.ai_target_queue:
@@ -243,6 +437,8 @@ def format_coordinate(row, col):
 
 def cell_symbol(cell, show_ships):
     """Symbol shown on a board button for a grid cell"""
+    if game.mode == "word" and len(cell) == 1 and cell.isalpha():
+        return cell.upper()
     if cell == "X":
         return "💥"
     if cell == "O":
@@ -251,8 +447,25 @@ def cell_symbol(cell, show_ships):
         return "🚢"
     return "🌊"
 
+def word_cell_update(r, c):
+    """Button update for a word-mode letter cell, styled by solved/selected state"""
+    classes = ["word-cell"]
+    variant = "secondary"
+    if (r, c) in game._solved_cells():
+        classes.append("solved-cell")
+    elif (r, c) in game.selected_cells:
+        classes.append("selected-cell")
+        variant = "primary"
+    return gr.update(value=cell_symbol(game.ai_ships[r][c], show_ships=True),
+                     variant=variant, elem_classes=classes)
+
 def board_updates():
     """Button updates for both boards, flattened player-first then AI"""
+    if game.mode == "word":
+        # Single letter grid: the hidden player board is left untouched
+        updates = [gr.update() for _ in range(GRID_SIZE * GRID_SIZE)]
+        updates += [word_cell_update(r, c) for r in range(GRID_SIZE) for c in range(GRID_SIZE)]
+        return updates
     updates = [gr.update(value=cell_symbol(game.player_grid[r][c], show_ships=True))
                for r in range(GRID_SIZE) for c in range(GRID_SIZE)]
     updates += [gr.update(value=cell_symbol(game.ai_grid[r][c], show_ships=False))
@@ -261,7 +474,9 @@ def board_updates():
 
 def handle_grid_click(row, col, is_ai_grid):
     """Handle grid clicks for placement and attacking"""
-    if game.game_phase == "placement":
+    if game.mode == "word":
+        msg = game.select_cell(row, col) if is_ai_grid else game.message
+    elif game.game_phase == "placement":
         if is_ai_grid:
             msg = "Place your ships on your own grid (left)!"
         else:
@@ -293,6 +508,75 @@ def reset_game_handler():
     game.reset_game()
     return [game.message] + board_updates()
 
+def mode_view_updates():
+    """Visibility / label / theme updates for the current mode"""
+    word = game.mode == "word"
+    heading = ("### Word Puzzle Grid — click letters to spell words" if word
+               else "### AI Grid (Click to attack)")
+    return [
+        gr.update(visible=not word),                                   # player column
+        gr.update(visible=not word),                                   # orientation toggle
+        gr.update(visible=word),                                       # clear selection
+        gr.update(value=heading),                                      # AI grid heading
+        gr.update(value="Switch to Classic Mode" if word else "Switch to Word Puzzle Mode"),
+        gr.update(elem_classes=["word-mode"] if word else []),         # root container
+    ]
+
+def toggle_mode_handler():
+    """Switch classic <-> word mode and start a fresh game"""
+    game.toggle_mode()
+    board = board_updates()
+    if game.mode == "classic":
+        # Strip word-mode button styling before re-rendering the classic boards
+        for upd in board[GRID_SIZE * GRID_SIZE:]:
+            upd["variant"] = "secondary"
+            upd["elem_classes"] = []
+    return [game.message] + board + mode_view_updates()
+
+def clear_selection_handler():
+    return [game.clear_selection()] + board_updates()
+
+WORD_MODE_CSS = """
+.word-mode, .word-mode .block, .word-mode .form, .word-mode .gap, .word-mode .panel {
+    background: #0d0d0f !important;
+    color: #e6e6e6 !important;
+    border-color: #2a2a30 !important;
+}
+.word-mode .prose, .word-mode .prose *, .word-mode .html-container, .word-mode .html-container *,
+.word-mode label, .word-mode label span {
+    color: #e6e6e6 !important;
+}
+.word-mode input, .word-mode textarea {
+    background: #1a1a1e !important;
+    color: #e6e6e6 !important;
+    border-color: #2a2a30 !important;
+}
+.word-mode button {
+    background: #1a1a1e !important;
+    color: #e6e6e6 !important;
+    border: 1px solid #2a2a30 !important;
+    box-shadow: none !important;
+}
+.word-mode button:hover {
+    border-color: #6c6cff !important;
+}
+.word-mode button.word-cell {
+    font-weight: 600;
+    letter-spacing: 0.05em;
+}
+.word-mode button.selected-cell {
+    border: 2px solid #6c6cff !important;
+    color: #ffffff !important;
+    background: #23233a !important;
+}
+.word-mode button.solved-cell {
+    border: 1px solid #3ddc84 !important;
+    color: #3ddc84 !important;
+    background: #10231a !important;
+    box-shadow: 0 0 8px rgba(61, 220, 132, 0.6) !important;
+}
+"""
+
 def create_interactive_grid(grid, is_ai_grid=False):
     """Create interactive grid with buttons"""
     buttons = []
@@ -315,97 +599,121 @@ def create_interactive_grid(grid, is_ai_grid=False):
 
 # Create Gradio interface
 with gr.Blocks(title="Battleship Game") as app:
-    gr.Markdown("# 🚢 Battleship Game")
-    gr.Markdown("### Human vs AI")
+    with gr.Column(elem_id="root-container") as root_container:
+        gr.Markdown("# 🚢 Battleship Game")
+        gr.Markdown("### Human vs AI")
     
-    with gr.Row():
-        message_box = gr.Textbox(label="Game Status", value=game.message, interactive=False)
+        with gr.Row():
+            message_box = gr.Textbox(label="Game Status", value=game.message, interactive=False)
     
-    with gr.Row():
-        toggle_btn = gr.Button("Toggle Orientation (Horizontal/Vertical)")
-        reset_btn = gr.Button("Reset Game")
+        with gr.Row():
+            toggle_btn = gr.Button("Toggle Orientation (Horizontal/Vertical)")
+            reset_btn = gr.Button("Reset Game")
+            mode_btn = gr.Button("Switch to Word Puzzle Mode")
+            clear_btn = gr.Button("Clear Selection", visible=False)
     
-    with gr.Row():
-        with gr.Column():
-            gr.Markdown("### Your Grid")
-            with gr.Group():
-                # Column headers (A-J)
-                with gr.Row():
-                    gr.HTML("<div style='width:40px;text-align:center'>&nbsp;</div>")  # Empty space for row label column
-                    for c in range(GRID_SIZE):
-                        gr.HTML(f"<div style='width:40px;text-align:center'><b>{chr(ord('A') + c)}</b></div>")
-                
-                # Grid rows with row labels (1-10)
-                player_buttons = []
-                for r in range(GRID_SIZE):
+        with gr.Row():
+            with gr.Column() as player_column:
+                gr.Markdown("### Your Grid")
+                with gr.Group():
+                    # Column headers (A-J)
                     with gr.Row():
-                        gr.HTML(f"<div style='width:40px;text-align:center'><b>{r + 1}</b></div>")  # Row label
-                        row_btns = []
+                        gr.HTML("<div style='width:40px;text-align:center'>&nbsp;</div>")  # Empty space for row label column
                         for c in range(GRID_SIZE):
-                            btn = gr.Button(cell_symbol(game.player_grid[r][c], show_ships=True),
-                                            size="sm", scale=1, min_width=40)
-                            row_btns.append(btn)
-                        player_buttons.append(row_btns)
+                            gr.HTML(f"<div style='width:40px;text-align:center'><b>{chr(ord('A') + c)}</b></div>")
+                
+                    # Grid rows with row labels (1-10)
+                    player_buttons = []
+                    for r in range(GRID_SIZE):
+                        with gr.Row():
+                            gr.HTML(f"<div style='width:40px;text-align:center'><b>{r + 1}</b></div>")  # Row label
+                            row_btns = []
+                            for c in range(GRID_SIZE):
+                                btn = gr.Button(cell_symbol(game.player_grid[r][c], show_ships=True),
+                                                size="sm", scale=1, min_width=40)
+                                row_btns.append(btn)
+                            player_buttons.append(row_btns)
         
-        with gr.Column():
-            gr.Markdown("### AI Grid (Click to attack)")
-            with gr.Group():
-                # Column headers (A-J)
-                with gr.Row():
-                    gr.HTML("<div style='width:40px;text-align:center'>&nbsp;</div>")  # Empty space for row label column
-                    for c in range(GRID_SIZE):
-                        gr.HTML(f"<div style='width:40px;text-align:center'><b>{chr(ord('A') + c)}</b></div>")
-                
-                # Grid rows with row labels (1-10)
-                ai_buttons = []
-                for r in range(GRID_SIZE):
+            with gr.Column():
+                ai_heading = gr.Markdown("### AI Grid (Click to attack)")
+                with gr.Group():
+                    # Column headers (A-J)
                     with gr.Row():
-                        gr.HTML(f"<div style='width:40px;text-align:center'><b>{r + 1}</b></div>")  # Row label
-                        row_btns = []
+                        gr.HTML("<div style='width:40px;text-align:center'>&nbsp;</div>")  # Empty space for row label column
                         for c in range(GRID_SIZE):
-                            btn = gr.Button(cell_symbol(game.ai_grid[r][c], show_ships=False),
-                                            size="sm", scale=1, min_width=40)
-                            row_btns.append(btn)
-                        ai_buttons.append(row_btns)
+                            gr.HTML(f"<div style='width:40px;text-align:center'><b>{chr(ord('A') + c)}</b></div>")
+                
+                    # Grid rows with row labels (1-10)
+                    ai_buttons = []
+                    for r in range(GRID_SIZE):
+                        with gr.Row():
+                            gr.HTML(f"<div style='width:40px;text-align:center'><b>{r + 1}</b></div>")  # Row label
+                            row_btns = []
+                            for c in range(GRID_SIZE):
+                                btn = gr.Button(cell_symbol(game.ai_grid[r][c], show_ships=False),
+                                                size="sm", scale=1, min_width=40)
+                                row_btns.append(btn)
+                            ai_buttons.append(row_btns)
     
-    gr.Markdown("""
-    ### How to Play:
-    1. **Placement Phase**: Click on your grid (left) to place ships. Toggle orientation as needed.
-    2. **Battle Phase**: Click on AI grid (right) to attack. AI attacks automatically after your turn.
-    3. **Ships**: Carrier (5), Battleship (4), Cruiser (3), Submarine (3), Destroyer (2)
+        gr.Markdown("""
+        ### How to Play:
+        1. **Placement Phase**: Click on your grid (left) to place ships. Toggle orientation as needed.
+        2. **Battle Phase**: Click on AI grid (right) to attack. AI attacks automatically after your turn.
+        3. **Ships**: Carrier (5), Battleship (4), Cruiser (3), Submarine (3), Destroyer (2)
     
-    **Legend**: 🌊 Water | 🚢 Ship | 💥 Hit | ⚪ Miss
-    """)
+        **Legend**: 🌊 Water | 🚢 Ship | 💥 Hit | ⚪ Miss
     
-    flat_buttons = ([player_buttons[r][c] for r in range(GRID_SIZE) for c in range(GRID_SIZE)] +
-                    [ai_buttons[r][c] for r in range(GRID_SIZE) for c in range(GRID_SIZE)])
-    board_outputs = [message_box] + flat_buttons
+        ### Word Puzzle Mode:
+        Press **Switch to Word Puzzle Mode** for a single 10x10 grid of letters. Five hidden words
+        (5, 4, 3, 3 and 2 letters, running across or down) are the AI's "ships" — each is a coding
+        task Devin is great at (e.g. DEBUG, LINT, FIX, PR). Click letters to select them (click again
+        to deselect, or use **Clear Selection**); spell a full word to sink it. Cells of solved words
+        turn green. The grid also hides decoy words — SWE tasks better owned by humans (e.g. SCOPE,
+        HIRE, ONCALL). Spelling a decoy opens a popup explaining why it isn't a fit for Devin and
+        doesn't count toward the win. Find all five targets to win; the AI never fires back.
     
-    # Wire up player grid clicks (for placement)
-    for r in range(GRID_SIZE):
-        for c in range(GRID_SIZE):
-            player_buttons[r][c].click(
-                fn=lambda r=r, c=c: handle_grid_click(r, c, is_ai_grid=False),
-                outputs=board_outputs
-            )
+        **Word Legend**: letter = unsolved | green glow = solved word | accent border = selected
+        """)
     
-    # Wire up AI grid clicks (for attacking)
-    for r in range(GRID_SIZE):
-        for c in range(GRID_SIZE):
-            ai_buttons[r][c].click(
-                fn=lambda r=r, c=c: handle_grid_click(r, c, is_ai_grid=True),
-                outputs=board_outputs
-            )
+        flat_buttons = ([player_buttons[r][c] for r in range(GRID_SIZE) for c in range(GRID_SIZE)] +
+                        [ai_buttons[r][c] for r in range(GRID_SIZE) for c in range(GRID_SIZE)])
+        board_outputs = [message_box] + flat_buttons
     
-    toggle_btn.click(
-        fn=orientation_toggle,
-        outputs=[message_box]
-    )
+        # Wire up player grid clicks (for placement)
+        for r in range(GRID_SIZE):
+            for c in range(GRID_SIZE):
+                player_buttons[r][c].click(
+                    fn=lambda r=r, c=c: handle_grid_click(r, c, is_ai_grid=False),
+                    outputs=board_outputs
+                )
     
-    reset_btn.click(
-        fn=reset_game_handler,
-        outputs=board_outputs
-    )
+        # Wire up AI grid clicks (for attacking)
+        for r in range(GRID_SIZE):
+            for c in range(GRID_SIZE):
+                ai_buttons[r][c].click(
+                    fn=lambda r=r, c=c: handle_grid_click(r, c, is_ai_grid=True),
+                    outputs=board_outputs
+                )
+    
+        toggle_btn.click(
+            fn=orientation_toggle,
+            outputs=[message_box]
+        )
+    
+        reset_btn.click(
+            fn=reset_game_handler,
+            outputs=board_outputs
+        )
+    
+        mode_btn.click(
+            fn=toggle_mode_handler,
+            outputs=board_outputs + [player_column, toggle_btn, clear_btn, ai_heading, mode_btn, root_container]
+        )
+    
+        clear_btn.click(
+            fn=clear_selection_handler,
+            outputs=board_outputs
+        )
 
 if __name__ == "__main__":
-    app.launch()
+    app.launch(css=WORD_MODE_CSS)
