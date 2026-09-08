@@ -13,3 +13,11 @@ pytest
 `pytest` picks up `tests/` and the coverage options from `pyproject.toml` (`--cov=app --cov-report=term-missing`,
 failing below 90% coverage). The Gradio `with gr.Blocks(...)` UI construction and the `__main__` launch are
 excluded from the coverage report; all game logic in `BattleshipGame` and the module-level handlers is covered.
+
+## Deploy to Render
+
+The repo ships a `render.yaml` blueprint (free web service, `python app.py` bound to Render's `$PORT`).
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/ak777app/battleship)
+
+Or in the Render dashboard: **New → Blueprint**, pick this repo, and apply.
