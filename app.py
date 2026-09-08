@@ -659,6 +659,15 @@ textarea {
     font-size: 12px !important;
 }
 
+/* Centered title and subtitle */
+#game-title, #game-subtitle {
+    text-align: center !important;
+}
+#game-title h1, #game-subtitle h3 {
+    text-align: center !important;
+    display: block !important;
+}
+
 /* Headings with neon green glow */
 h1, h2, h3, label {
     color: #00ff00 !important;
@@ -885,6 +894,32 @@ function playVictorySound() {
     }
 }
 
+function playWordSolvedSound() {
+    initAudio();
+    if (!audioContext) return;
+    
+    try {
+        // Rising three-note arpeggio for a correctly spelled target word
+        const notes = [523, 659, 784];
+        notes.forEach((freq, i) => {
+            const osc = audioContext.createOscillator();
+            const gain = audioContext.createGain();
+            osc.connect(gain);
+            gain.connect(audioContext.destination);
+            osc.type = 'triangle';
+            osc.frequency.value = freq;
+            const start = audioContext.currentTime + i * 0.12;
+            gain.gain.setValueAtTime(0.25, start);
+            gain.gain.exponentialRampToValueAtTime(0.01, start + 0.35);
+            osc.start(start);
+            osc.stop(start + 0.35);
+        });
+        console.log('✅ Word solved sound played');
+    } catch (e) {
+        console.error('Word solved sound failed:', e);
+    }
+}
+
 function createFirework(x, y) {
     console.log('🎆 Creating firework at', x, y);
     const colors = ['#ff0000', '#00ff00', '#0000ff', '#ffff00', '#ff00ff', '#00ffff'];
@@ -965,13 +1000,18 @@ function checkForGameEvents() {
             console.log('📝 Message changed:', text);
             lastMessageText = text;
             
-            if (text.includes('Hit at')) {
-                playHitSound();
-            } else if (text.includes('Miss at')) {
-                playMissSound();
-            } else if (text.includes('You Win!') || text.includes('🎉')) {
-                playVictorySound();
+            // 'words found' also appears in the word-mode win message, so the last word chimes too
+            const wordSolved = text.includes('solved!') || text.includes('words found');
+            if (wordSolved) {
+                playWordSolvedSound();
+            }
+            if (text.includes('You Win!') || text.includes('🎉')) {
+                setTimeout(playVictorySound, wordSolved ? 450 : 0);
                 setTimeout(showVictoryScreen, 300);
+            } else if (!wordSolved && text.includes('Hit at')) {
+                playHitSound();
+            } else if (!wordSolved && text.includes('Miss at')) {
+                playMissSound();
             }
         }
     });
@@ -1044,6 +1084,26 @@ WORD_MODE_CSS = """
 }
 .word-mode button.target-cell {
     font-weight: 900;
+    position: relative;
+    overflow: visible !important;
+}
+/* Green dot on the bottom border line marks letters that belong to a target word */
+.word-mode button.target-cell::after {
+    content: "";
+    position: absolute;
+    bottom: -2px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: #3ddc84;
+    box-shadow: 0 0 3px #3ddc84, 0 0 6px rgba(61, 220, 132, 0.8);
+    pointer-events: none;
+    z-index: 1;
+}
+.word-mode button.solved-cell::after {
+    display: none;
 }
 .word-mode button.selected-cell {
     border: 2px solid #6c6cff !important;
@@ -1081,8 +1141,8 @@ def create_interactive_grid(grid, is_ai_grid=False):
 # Create Gradio interface
 with gr.Blocks(title="Battleship Game") as app:
     with gr.Column(elem_id="root-container") as root_container:
-        gr.Markdown("# 🚢 Battleship Game")
-        gr.Markdown("### Human vs AI")
+        gr.Markdown("# 🚢 Battleship Game", elem_id="game-title")
+        gr.Markdown("### Human vs AI", elem_id="game-subtitle")
     
         with gr.Row():
             message_box = gr.Textbox(label="Game Status", value=game.message, interactive=False)
@@ -1151,7 +1211,8 @@ with gr.Blocks(title="Battleship Game") as app:
         (5, 4, 3, 3 and 2 letters, running across or down, never touching each other) are the AI's "ships" — each is a coding
         task Devin is great at (e.g. DEBUG, LINT, FIX, PR). Click letters to select them (click again
         to deselect, or use **Clear Selection**); spell a full word to sink it. Letters that belong to a
-        hidden target word are shown in **bold** as a hint. Cells of solved words
+        hidden target word are shown in **bold** with a green dot on their bottom edge as a hint; a
+        chime plays every time you spell a target word. Cells of solved words
         turn green. The grid also hides decoy words — SWE tasks better owned by humans (e.g. SCOPE,
         HIRE, ONCALL). Spelling a decoy opens a popup explaining why it isn't a fit for Devin and
         doesn't count toward the win. Your own fleet (left) is placed automatically, spread out and
@@ -1159,7 +1220,7 @@ with gr.Blocks(title="Battleship Game") as app:
         fires one classic shot at it after every letter you click. Find all five targets before it
         sinks your fleet.
     
-        **Word Legend**: **bold** letter = part of a target | green glow = solved word | accent border = selected
+        **Word Legend**: **bold** letter + green dot = part of a target | green glow = solved word | accent border = selected
         """)
     
         flat_buttons = ([player_buttons[r][c] for r in range(GRID_SIZE) for c in range(GRID_SIZE)] +
