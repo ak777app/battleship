@@ -951,7 +951,12 @@ function createFirework(x, y) {
     }
 }
 
+let victoryTriggered = false;
+
 function showVictoryScreen() {
+    // Only celebrate once per win, even if the win text is seen repeatedly
+    if (victoryTriggered) return;
+    victoryTriggered = true;
     console.log('🏆 VICTORY! Showing celebration');
     
     let overlay = document.getElementById('victory-overlay');
@@ -1016,20 +1021,30 @@ function checkForGameEvents() {
         }
     });
     
-    // Also check all text content
-    const allText = document.body.textContent || '';
-    if (allText.includes('You Win!') && !document.getElementById('victory-overlay')?.style.display === 'flex') {
-        playVictorySound();
-        setTimeout(showVictoryScreen, 300);
+    // Also check all text content (fallback). Skip once the win has already
+    // been celebrated so the sound doesn't repeat while 'You Win!' stays on screen.
+    if (!victoryTriggered) {
+        const allText = document.body.textContent || '';
+        if (allText.includes('You Win!')) {
+            playVictorySound();
+            setTimeout(showVictoryScreen, 300);
+        }
     }
 }
 
 // Poll for changes every 200ms
 setInterval(checkForGameEvents, 200);
 
-// Also use MutationObserver as backup
+// Also use MutationObserver as backup, but coalesce bursts of mutations
+// (e.g. firework particles being added/removed) into a single check.
+let scanScheduled = false;
 const observer = new MutationObserver(() => {
-    checkForGameEvents();
+    if (scanScheduled) return;
+    scanScheduled = true;
+    requestAnimationFrame(() => {
+        scanScheduled = false;
+        checkForGameEvents();
+    });
 });
 
 observer.observe(document.body, {
