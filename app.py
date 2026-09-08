@@ -659,6 +659,15 @@ textarea {
     font-size: 12px !important;
 }
 
+/* Centered title and subtitle */
+#game-title, #game-subtitle {
+    text-align: center !important;
+}
+#game-title h1, #game-subtitle h3 {
+    text-align: center !important;
+    display: block !important;
+}
+
 /* Headings with neon green glow */
 h1, h2, h3, label {
     color: #00ff00 !important;
@@ -1082,14 +1091,14 @@ WORD_MODE_CSS = """
 .word-mode button.target-cell::after {
     content: "";
     position: absolute;
-    bottom: -4px;
+    bottom: -2px;
     left: 50%;
     transform: translateX(-50%);
-    width: 8px;
-    height: 8px;
+    width: 3px;
+    height: 3px;
     border-radius: 50%;
     background: #3ddc84;
-    box-shadow: 0 0 6px #3ddc84, 0 0 12px rgba(61, 220, 132, 0.8);
+    box-shadow: 0 0 3px #3ddc84, 0 0 6px rgba(61, 220, 132, 0.8);
     pointer-events: none;
     z-index: 1;
 }
@@ -1132,8 +1141,8 @@ def create_interactive_grid(grid, is_ai_grid=False):
 # Create Gradio interface
 with gr.Blocks(title="Battleship Game") as app:
     with gr.Column(elem_id="root-container") as root_container:
-        gr.Markdown("# 🚢 Battleship Game")
-        gr.Markdown("### Human vs AI")
+        gr.Markdown("# 🚢 Battleship Game", elem_id="game-title")
+        gr.Markdown("### Human vs AI", elem_id="game-subtitle")
     
         with gr.Row():
             message_box = gr.Textbox(label="Game Status", value=game.message, interactive=False)
