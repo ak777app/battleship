@@ -196,18 +196,18 @@ class BattleshipGame:
         
         ship_name, ship_size = ship_list[index]
         
-        # Generate all valid positions for this ship
+        # Generate all valid positions for this ship (words additionally keep a one-cell gap)
         positions = []
         for orientation in ["horizontal", "vertical"]:
             if orientation == "horizontal":
                 for row in range(GRID_SIZE):
                     for col in range(GRID_SIZE - ship_size + 1):
-                        if self._can_place_ship(self.ai_ships, row, col, ship_size, orientation):
+                        if self._can_place_ship(self.ai_ships, row, col, ship_size, orientation, isolated=letters):
                             positions.append((row, col, orientation))
             else:  # vertical
                 for row in range(GRID_SIZE - ship_size + 1):
                     for col in range(GRID_SIZE):
-                        if self._can_place_ship(self.ai_ships, row, col, ship_size, orientation):
+                        if self._can_place_ship(self.ai_ships, row, col, ship_size, orientation, isolated=letters):
                             positions.append((row, col, orientation))
         
         # Shuffle positions for randomness
@@ -241,21 +241,20 @@ class BattleshipGame:
         # No valid placement found for this ship
         return False
     
-    def _can_place_ship(self, grid, row, col, size, orientation):
-        """Check if ship can be placed at given position"""
+    def _can_place_ship(self, grid, row, col, size, orientation, isolated=False):
+        """Check if ship can be placed at given position; isolated=True also requires no
+        occupied cell in any of the 8 neighbours of every cell (a one-cell gap)"""
         if orientation == "horizontal":
             if col + size > GRID_SIZE:
                 return False
-            for i in range(size):
-                if grid[row][col + i] != "~":
-                    return False
+            cells = [(row, col + i) for i in range(size)]
         else:
             if row + size > GRID_SIZE:
                 return False
-            for i in range(size):
-                if grid[row + i][col] != "~":
-                    return False
-        return True
+            cells = [(row + i, col) for i in range(size)]
+        if isolated:
+            return all(self._isolated(grid, r, c) for r, c in cells)
+        return all(grid[r][c] == "~" for r, c in cells)
     
     def place_ship(self, row, col):
         """Place current ship at given position"""
@@ -743,7 +742,7 @@ with gr.Blocks(title="Battleship Game") as app:
     
         ### Word Puzzle Mode:
         Press **Switch to Word Puzzle Mode** for a 10x10 grid of letters on the right. Five hidden words
-        (5, 4, 3, 3 and 2 letters, running across or down) are the AI's "ships" — each is a coding
+        (5, 4, 3, 3 and 2 letters, running across or down, never touching each other) are the AI's "ships" — each is a coding
         task Devin is great at (e.g. DEBUG, LINT, FIX, PR). Click letters to select them (click again
         to deselect, or use **Clear Selection**); spell a full word to sink it. Letters that belong to a
         hidden target word are shown in **bold** as a hint. Cells of solved words
