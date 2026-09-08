@@ -1159,9 +1159,9 @@ def create_interactive_grid(grid, is_ai_grid=False):
 
 # Create Gradio interface
 with gr.Blocks(title="Battleship Game") as app:
-    # Each browser session gets its own deep copy of this initial game
-    initial_game = BattleshipGame()
-    game_state = gr.State(initial_game)
+    # Callable: a fresh, independently randomized game is created per browser session
+    game_state = gr.State(BattleshipGame)
+    initial_game = BattleshipGame()  # only for the initial (static) board render
     with gr.Column(elem_id="root-container") as root_container:
         gr.Markdown("# 🚢 Battleship Game", elem_id="game-title")
         gr.Markdown("### Human vs AI", elem_id="game-subtitle")
