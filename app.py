@@ -621,9 +621,37 @@ def reset_game_handler(game):
     game.reset_game()
     return [game, game.message, placement_info(game)] + board_updates(game)
 
-def mode_view_updates(game):
-    """Visibility / label / theme updates for the current mode"""
+CLASSIC_HELP_MD = """
+### How to Play:
+1. **Placement Phase**: Click on your grid (left) to place ships. Toggle orientation as needed.
+2. **Battle Phase**: Click on AI grid (right) to attack. AI attacks automatically after your turn.
+3. **Ships**: Carrier (5), Battleship (4), Cruiser (3), Submarine (3), Destroyer (2)
+
+**Legend**: 🌊 Water | 🚢 Ship | 💥 Hit | ⚪ Miss
+"""
+
+WORD_HELP_MD = """
+### How to Win — Word Puzzle Mode
+**Goal:** find the **5 hidden words** on the letter grid (right) before the AI sinks your fleet (left).
+
+1. **Spot a target.** Letters in **bold** with a green dot belong to a hidden word. Words are 5, 4, 3, 3 and 2
+   letters long, run straight across or down, and never touch. Each is a coding task Devin excels at
+   (e.g. DEBUG, LINT, FIX, PR).
+2. **Spell it.** Click the letters in order (click again to deselect, or use **Clear Selection**).
+   Spelling a full word sinks it: the cells glow green and a chime plays.
+3. **Avoid decoys.** The grid also hides words for tasks humans should own (e.g. SCOPE, HIRE, ONCALL).
+   Spelling one shows a popup explaining why and does not count.
+4. **Watch your fleet.** It is placed for you; the AI fires one shot at it after every letter you click.
+
+**Legend**: **bold** + green dot = target letter | green glow = solved word | accent border = selected
+"""
+
+def mode_view_updates(game, show_help=None):
+    """Visibility / label / theme updates for the current mode; show_help forces the
+    word-mode instructions popup open/closed (default: open only in word mode)"""
     word = game.mode == "word"
+    if show_help is None:
+        show_help = word
     heading = ("### Word Puzzle Grid — click letters to spell words" if word
                else "### AI Grid (Click to attack)")
     player_heading = "### Your Fleet (auto-placed — the AI fires back)" if word else "### Your Grid"
@@ -634,7 +662,16 @@ def mode_view_updates(game):
         gr.update(value=heading),                                      # AI grid heading
         gr.update(value="Switch to Classic Mode" if word else "Switch to Word Puzzle Mode"),
         gr.update(elem_classes=["word-mode"] if word else []),         # root container
+        gr.update(visible=not word),                                   # classic instructions
+        gr.update(visible=word),                                       # "How to Win" button
+        gr.update(visible=word and show_help),                         # word-mode instructions popup
     ]
+
+def show_word_help():
+    return gr.update(visible=True)
+
+def hide_word_help():
+    return gr.update(visible=False)
 
 def toggle_mode_handler(game):
     """Switch classic <-> word mode and start a fresh game"""
@@ -1245,6 +1282,39 @@ WORD_MODE_CSS = """
     box-shadow: 0 0 8px rgba(61, 220, 132, 0.6) !important;
 }
 
+/* Word-mode instructions popup: full-screen overlay with a centred card */
+#word-help-modal {
+    position: fixed !important;
+    inset: 0;
+    z-index: 1000;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.7) !important;
+    border: none !important;
+    padding: 16px;
+}
+#word-help-modal.hidden, #word-help-modal.hide {
+    display: none !important;
+}
+#word-help-card {
+    max-width: 640px;
+    max-height: 90vh;
+    height: auto !important;
+    flex: 0 0 auto !important;
+    align-self: center;
+    overflow-y: auto;
+    background: #0d0d0f !important;
+    color: #e6e6e6 !important;
+    border: 1px solid #6c6cff !important;
+    border-radius: 12px;
+    padding: 24px !important;
+    box-shadow: 0 0 24px rgba(108, 108, 255, 0.5);
+}
+#word-help-card .prose, #word-help-card .prose * {
+    color: #e6e6e6 !important;
+}
+
 /* Placement preview (hover on your grid during placement) */
 #placement-info-wrap {
     display: none;
@@ -1324,30 +1394,12 @@ with gr.Blocks(title="Battleship Game") as app:
                                 row_btns.append(btn)
                             ai_buttons.append(row_btns)
     
-        gr.Markdown("""
-        ### How to Play:
-        1. **Placement Phase**: Click on your grid (left) to place ships. Toggle orientation as needed.
-        2. **Battle Phase**: Click on AI grid (right) to attack. AI attacks automatically after your turn.
-        3. **Ships**: Carrier (5), Battleship (4), Cruiser (3), Submarine (3), Destroyer (2)
-    
-        **Legend**: 🌊 Water | 🚢 Ship | 💥 Hit | ⚪ Miss
-    
-        ### Word Puzzle Mode:
-        Press **Switch to Word Puzzle Mode** for a 10x10 grid of letters on the right. Five hidden words
-        (5, 4, 3, 3 and 2 letters, running across or down, never touching each other) are the AI's "ships" — each is a coding
-        task Devin is great at (e.g. DEBUG, LINT, FIX, PR). Click letters to select them (click again
-        to deselect, or use **Clear Selection**); spell a full word to sink it. Letters that belong to a
-        hidden target word are shown in **bold** with a green dot on their bottom edge as a hint; a
-        chime plays every time you spell a target word. Cells of solved words
-        turn green. The grid also hides decoy words — SWE tasks better owned by humans (e.g. SCOPE,
-        HIRE, ONCALL). Spelling a decoy opens a popup explaining why it isn't a fit for Devin and
-        doesn't count toward the win. Your own fleet (left) is placed automatically, spread out and
-        hugging the edges so the AI's hunt-after-a-hit tactic finds as little as possible; the AI
-        fires one classic shot at it after every letter you click. Find all five targets before it
-        sinks your fleet.
-    
-        **Word Legend**: **bold** letter + green dot = part of a target | green glow = solved word | accent border = selected
-        """)
+        classic_help = gr.Markdown(CLASSIC_HELP_MD)
+        help_btn = gr.Button("How to Win", visible=False)
+        with gr.Column(visible=False, elem_id="word-help-modal") as word_help_modal:
+            with gr.Column(elem_id="word-help-card"):
+                gr.Markdown(WORD_HELP_MD)
+                help_close_btn = gr.Button("Got it — let's play", variant="primary")
     
         flat_buttons = ([player_buttons[r][c] for r in range(GRID_SIZE) for c in range(GRID_SIZE)] +
                         [ai_buttons[r][c] for r in range(GRID_SIZE) for c in range(GRID_SIZE)])
@@ -1386,8 +1438,12 @@ with gr.Blocks(title="Battleship Game") as app:
         mode_btn.click(
             fn=toggle_mode_handler,
             inputs=[game_state],
-            outputs=board_outputs + [player_heading, toggle_btn, clear_btn, ai_heading, mode_btn, root_container]
+            outputs=board_outputs + [player_heading, toggle_btn, clear_btn, ai_heading, mode_btn, root_container,
+                                     classic_help, help_btn, word_help_modal]
         )
+    
+        help_btn.click(fn=show_word_help, outputs=[word_help_modal])
+        help_close_btn.click(fn=hide_word_help, outputs=[word_help_modal])
     
         clear_btn.click(
             fn=clear_selection_handler,

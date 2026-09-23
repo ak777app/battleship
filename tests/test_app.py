@@ -1090,13 +1090,16 @@ def test_reset_game_handler(global_classic):
 
 def test_mode_view_updates(global_classic):
     upd = mode_view_updates(global_classic)
-    assert len(upd) == 6
+    assert len(upd) == 9
     assert upd[0]["value"] == "### Your Grid"
     assert upd[1]["visible"] is True
     assert upd[2]["visible"] is False
     assert upd[3]["value"] == "### AI Grid (Click to attack)"
     assert upd[4]["value"] == "Switch to Word Puzzle Mode"
     assert upd[5]["elem_classes"] == []
+    assert upd[6]["visible"] is True    # classic instructions shown
+    assert upd[7]["visible"] is False   # How to Win button hidden
+    assert upd[8]["visible"] is False   # word popup hidden
     global_classic.mode = "word"
     upd = mode_view_updates(global_classic)
     assert upd[0]["value"].startswith("### Your Fleet")
@@ -1105,27 +1108,53 @@ def test_mode_view_updates(global_classic):
     assert upd[3]["value"].startswith("### Word Puzzle Grid")
     assert upd[4]["value"] == "Switch to Classic Mode"
     assert upd[5]["elem_classes"] == ["word-mode"]
+    assert upd[6]["visible"] is False
+    assert upd[7]["visible"] is True
+    assert upd[8]["visible"] is True    # popup opens on entering word mode
+
+
+def test_mode_view_updates_show_help_override(global_classic):
+    global_classic.mode = "word"
+    assert mode_view_updates(global_classic, show_help=False)[8]["visible"] is False
+    global_classic.mode = "classic"
+    # popup never shows in classic mode, even if asked for
+    assert mode_view_updates(global_classic, show_help=True)[8]["visible"] is False
+
+
+def test_word_help_show_hide():
+    assert app.show_word_help()["visible"] is True
+    assert app.hide_word_help()["visible"] is False
+
+
+def test_help_texts_are_mode_specific():
+    assert "Word Puzzle" not in app.CLASSIC_HELP_MD
+    assert "Placement Phase" in app.CLASSIC_HELP_MD
+    assert "How to Win" in app.WORD_HELP_MD
+    for word in ("5 hidden words", "DEBUG", "decoy", "Clear Selection", "green dot", "chime"):
+        assert word in app.WORD_HELP_MD
 
 
 def test_toggle_mode_handler_to_word(global_classic):
     result = toggle_mode_handler(global_classic)
     assert global_classic.mode == "word"
-    assert len(result) == 3 + 2 * CELLS + 6
+    assert len(result) == 3 + 2 * CELLS + 9
     assert "Solved 0/5" in result[1]
-    ai_updates = result[3 + CELLS:1 + 2 * CELLS]
+    ai_updates = result[3 + CELLS:3 + 2 * CELLS]
     assert all("word-cell" in u["elem_classes"] for u in ai_updates)
-    assert result[-1]["elem_classes"] == ["word-mode"]
+    assert result[-4]["elem_classes"] == ["word-mode"]
+    assert result[-1]["visible"] is True  # instructions popup
 
 
 def test_toggle_mode_handler_back_to_classic_strips_styling(global_word):
     result = toggle_mode_handler(global_word)
     assert global_word.mode == "classic"
-    assert len(result) == 3 + 2 * CELLS + 6
+    assert len(result) == 3 + 2 * CELLS + 9
     assert result[1] == "Place your Carrier (5 cells)"
-    ai_updates = result[3 + CELLS:1 + 2 * CELLS]
+    ai_updates = result[3 + CELLS:3 + 2 * CELLS]
     assert all(u["variant"] == "secondary" and u["elem_classes"] == [] for u in ai_updates)
     assert all(u["value"] == "🌊" for u in ai_updates)
-    assert result[-1]["elem_classes"] == []
+    assert result[-4]["elem_classes"] == []
+    assert result[-1]["visible"] is False
 
 
 def test_clear_selection_handler(global_word):
