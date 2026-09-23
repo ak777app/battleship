@@ -3,7 +3,7 @@
 Single-file Gradio app (`app.py`) with a classic mode and a word-puzzle mode. Run it with `python app.py`
 (serves at http://127.0.0.1:7860) locally.
 
-Online link: https://battleship-s0yh.onrender.com/
+Online link: https://battleship-s0yh.onrender.com/?__theme=dark
 
 ## Tests
 
