@@ -634,9 +634,8 @@ WORD_HELP_MD = """
 ### How to Win — Word Puzzle Mode
 **Goal:** find the **5 hidden words** on the letter grid (right) before the AI sinks your fleet (left).
 
-1. **Spot a target.** Letters in **bold** with a green dot belong to a hidden word. Words are 5, 4, 3, 3 and 2
-   letters long, run straight across or down, and never touch. Each is a coding task Devin excels at
-   (e.g. DEBUG, LINT, FIX, PR).
+1. **Spot a target.** Look for words that name coding tasks Devin excels at (e.g. DEBUG, LINT, FIX, PR).
+   Words are 5, 4, 3, 3 and 2 letters long, run straight across or down, and never touch.
 2. **Spell it.** Click the letters in order (click again to deselect, or use **Clear Selection**).
    Spelling a full word sinks it: the cells glow green and a chime plays.
 3. **Avoid decoys.** The grid also hides words for tasks humans should own (e.g. SCOPE, HIRE, ONCALL).
@@ -693,19 +692,24 @@ ARCADE_CSS = """
 
 /* Arcade video game styling */
 body {
-    background: linear-gradient(135deg, #0a0e27 0%, #1a1a2e 100%) !important;
+    background: #0d0d0f !important;
     font-family: 'Press Start 2P', cursive !important;
 }
 
 .gradio-container {
-    background: radial-gradient(circle at center, #16213e 0%, #0f1419 100%) !important;
+    background: #1a1a1e !important;
     border: 3px solid #00ff00 !important;
     box-shadow: 0 0 30px rgba(0, 255, 0, 0.5), inset 0 0 50px rgba(0, 255, 0, 0.1) !important;
 }
 
+.block, .form, .gap, .panel {
+    background: #1a1a1e !important;
+    border-color: #2a2a30 !important;
+}
+
 /* Neon glow buttons */
 button {
-    background: linear-gradient(145deg, #1a1a2e, #16213e) !important;
+    background: #1a1a1e !important;
     border: 2px solid #00ff00 !important;
     color: #00ff00 !important;
     text-shadow: 0 0 10px #00ff00 !important;
@@ -726,7 +730,7 @@ button:hover {
 .grid-cell {
     border: 1px solid #00ff00 !important;
     box-shadow: inset 0 0 5px rgba(0, 255, 0, 0.3) !important;
-    background: #0f1419 !important;
+    background: #3f3f46 !important;
     transition: all 0.2s ease !important;
 }
 
