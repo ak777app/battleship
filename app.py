@@ -680,7 +680,7 @@ def toggle_mode_handler(game):
         # Strip word-mode button styling before re-rendering the classic boards
         for upd in board[GRID_SIZE * GRID_SIZE:]:
             upd["variant"] = "secondary"
-            upd["elem_classes"] = []
+            upd["elem_classes"] = ["grid-cell"]
     return [game, game.message, placement_info(game)] + board + mode_view_updates(game)
 
 def clear_selection_handler(game):
@@ -1372,7 +1372,8 @@ with gr.Blocks(title="Battleship Game") as app:
                             row_btns = []
                             for c in range(GRID_SIZE):
                                 btn = gr.Button(cell_symbol(initial_game.player_grid[r][c], show_ships=True),
-                                                size="sm", scale=1, min_width=40, elem_id=f"pcell-{r}-{c}")
+                                                size="sm", scale=1, min_width=40, elem_id=f"pcell-{r}-{c}",
+                                                elem_classes=["grid-cell"])
                                 row_btns.append(btn)
                             player_buttons.append(row_btns)
         
@@ -1394,7 +1395,7 @@ with gr.Blocks(title="Battleship Game") as app:
                             row_btns = []
                             for c in range(GRID_SIZE):
                                 btn = gr.Button(cell_symbol(initial_game.ai_grid[r][c], show_ships=False),
-                                                size="sm", scale=1, min_width=40)
+                                                size="sm", scale=1, min_width=40, elem_classes=["grid-cell"])
                                 row_btns.append(btn)
                             ai_buttons.append(row_btns)
     

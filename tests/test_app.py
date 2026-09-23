@@ -1151,7 +1151,7 @@ def test_toggle_mode_handler_back_to_classic_strips_styling(global_word):
     assert len(result) == 3 + 2 * CELLS + 9
     assert result[1] == "Place your Carrier (5 cells)"
     ai_updates = result[3 + CELLS:3 + 2 * CELLS]
-    assert all(u["variant"] == "secondary" and u["elem_classes"] == [] for u in ai_updates)
+    assert all(u["variant"] == "secondary" and u["elem_classes"] == ["grid-cell"] for u in ai_updates)
     assert all(u["value"] == "🌊" for u in ai_updates)
     assert result[-4]["elem_classes"] == []
     assert result[-1]["visible"] is False
